@@ -227,3 +227,39 @@ export async function getBlockNumber(): Promise<number> {
     return 0;
   }
 }
+
+/**
+ * Get wallet balance for any currency
+ */
+export async function getWalletBalance(
+  address: string,
+  currency: 'ETH' | 'USDT'
+): Promise<number> {
+  try {
+    if (currency === 'ETH') {
+      const balance = await getETHBalance(address);
+      return parseFloat(balance);
+    } else if (currency === 'USDT') {
+      const contractAddress = process.env.NEXT_PUBLIC_USDT_CONTRACT_ADDRESS || '0x7F5c764cBc14f9669B88837ca1490cCa17c31607';
+      const balance = await getUSDTBalance(address, contractAddress);
+      return parseFloat(balance);
+    }
+    return 0;
+  } catch (error) {
+    console.error('Error getting wallet balance:', error);
+    return 0;
+  }
+}
+
+/**
+ * Get transaction count for an address
+ */
+export async function getTransactionCount(address: string): Promise<number> {
+  try {
+    const blockTag = 'latest';
+    return await provider.getTransactionCount(address, blockTag);
+  } catch (error) {
+    console.error('Error getting transaction count:', error);
+    return 0;
+  }
+}
