@@ -26,7 +26,10 @@ A production-grade decentralized payment gateway that allows you to:
 1. **[ENV_EXAMPLE.md](./ENV_EXAMPLE.md)** - Configure environment variables
 2. **[SETUP.md](./SETUP.md)** - Detailed setup guide (15 min read)
 3. Create `.env.local` with your values
-4. Run database migration from `scripts/setup-database.sql`
+4. **[MANUAL_DB_SETUP.md](./MANUAL_DB_SETUP.md)** - Database setup instructions (easiest way!)
+   - **Option A (Easiest)**: Copy-paste SQL into Supabase SQL Editor
+   - **Option B**: Use the in-app setup wizard at `/setup`
+   - **Option C**: Run migration script
 
 ### 🚀 Going to Production?
 1. **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** - Pre-production checks
