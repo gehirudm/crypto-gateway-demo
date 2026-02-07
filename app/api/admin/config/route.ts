@@ -60,15 +60,43 @@ export async function POST(request: NextRequest) {
 
     // Save configuration
     const supabase = await createClient()
-    const { error } = await supabase.from('admin_config').upsert({
-      id: 'default',
-      master_wallet_address: masterWalletAddress,
-      gas_wallet_address: gasWalletAddress,
-      updated_at: new Date().toISOString(),
-    })
-
+    
+    // First check if config exists
+    const { data: existingConfig, error: fetchError } = await supabase
+      .from('admin_config')
+      .select('*')
+      .eq('id', 'default')
+      .single()
+    
+    let result
+    if (existingConfig) {
+      // Update existing config
+      result = await supabase
+        .from('admin_config')
+        .update({
+          master_wallet_address: masterWalletAddress,
+          gas_wallet_address: gasWalletAddress,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'default')
+    } else {
+      // Insert new config
+      result = await supabase
+        .from('admin_config')
+        .insert({
+          id: 'default',
+          master_wallet_address: masterWalletAddress,
+          gas_wallet_address: gasWalletAddress,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+    }
+    
+    const { error } = result
+    
     if (error) {
-      throw error
+      console.error('Supabase error:', error)
+      throw new Error(`Database error: ${error.message}`)
     }
 
     const gasBalance = await getWalletBalance(gasWalletAddress, 'ETH')

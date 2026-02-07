@@ -29,16 +29,18 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
         },
       })
 
+      const data = await response.json()
+
       if (response.ok) {
-        const data = await response.json()
         setConfig(data)
         if (data.masterWalletAddress) {
           setMasterWalletAddress(data.masterWalletAddress)
         }
       } else {
-        setError('Failed to fetch configuration')
+        setError(data.error || 'Failed to fetch configuration')
       }
     } catch (err) {
+      console.error('[v0] Config fetch error:', err)
       setError('Failed to fetch configuration')
     } finally {
       setIsLoading(false)
@@ -69,14 +71,19 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
         body: JSON.stringify({ masterWalletAddress }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to save configuration')
+        console.error('[v0] Save config error:', data)
+        throw new Error(data.error || 'Failed to save configuration')
       }
 
-      const data = await response.json()
       setConfig(data.config)
       setSuccess('Configuration saved successfully!')
+      // Refresh config after successful save
+      setTimeout(() => fetchConfig(), 1000)
     } catch (err) {
+      console.error('[v0] Error saving config:', err)
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsSaving(false)
