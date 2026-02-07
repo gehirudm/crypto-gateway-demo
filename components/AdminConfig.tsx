@@ -17,6 +17,8 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
   const [copied, setCopied] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [isConfigured, setIsConfigured] = useState(false); // Declare isConfigured variable
+  const [isFullyConfigured, setIsFullyConfigured] = useState(false); // Declare isFullyConfigured variable
 
   const fetchConfig = async () => {
     setIsLoading(true)
@@ -36,6 +38,8 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
         if (data.masterWalletAddress) {
           setMasterWalletAddress(data.masterWalletAddress)
         }
+        setIsConfigured(data.configured); // Update isConfigured state
+        setIsFullyConfigured(data.masterWalletAddress && data.gasWalletFunded); // Update isFullyConfigured state
       } else {
         setError(data.error || 'Failed to fetch configuration')
       }
@@ -104,31 +108,40 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
     )
   }
 
-  const isConfigured = config?.configured
+  const hasMasterWallet = config?.masterWalletAddress
+  const gasWalletFunded = config?.gasWalletFunded
 
   return (
     <div className="space-y-8">
       {/* Status Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-          <p className="text-sm text-slate-400 mb-2">Gateway Status</p>
+          <p className="text-sm text-slate-400 mb-2">System Status</p>
           <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${isConfigured ? 'bg-green-500' : 'bg-red-500'}`} />
+            <div className={`w-3 h-3 rounded-full ${isConfigured ? 'bg-green-500' : 'bg-yellow-500'}`} />
             <span className="text-xl font-bold text-white">
-              {isConfigured ? 'Configured' : 'Not Configured'}
+              {isConfigured ? 'Ready' : 'Pending'}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-2">
-            {isConfigured ? 'All required settings are configured' : 'Gateway needs configuration'}
+            {isConfigured ? 'Ready to accept payments' : 'Waiting for configuration'}
           </p>
         </div>
 
         <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+          <p className="text-sm text-slate-400 mb-2">Master Wallet</p>
+          <div className={`text-lg font-bold ${hasMasterWallet ? 'text-green-400' : 'text-red-400'}`}>
+            {hasMasterWallet ? '✓ Added' : '✗ Missing'}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">Fund destination wallet</p>
+        </div>
+
+        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
           <p className="text-sm text-slate-400 mb-2">Gas Wallet Balance</p>
-          <div className="text-2xl font-bold text-blue-400">
+          <div className={`text-lg font-bold ${gasWalletFunded ? 'text-green-400' : 'text-red-400'}`}>
             {config?.gasWalletBalance?.toFixed(6) || '0'} ETH
           </div>
-          <p className="text-xs text-slate-400 mt-2">Used for USDT prefunding</p>
+          <p className="text-xs text-slate-400 mt-2">{gasWalletFunded ? 'Funded' : 'Needs funding'}</p>
         </div>
       </div>
 
@@ -144,13 +157,15 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
           </button>
         </div>
 
-        {!isConfigured && (
+        {!isFullyConfigured && (
           <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-start gap-3">
             <AlertCircle size={18} className="text-yellow-400 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-semibold text-yellow-300">Configuration Required</p>
+              <p className="font-semibold text-yellow-300">Configuration Incomplete</p>
               <p className="text-sm text-yellow-300 mt-1">
-                The gateway will not function until the master wallet address is configured.
+                {!hasMasterWallet && 'Add your master wallet address'}
+                {hasMasterWallet && !gasWalletFunded && 'Send funds to the gas wallet'}
+                {!hasMasterWallet && !gasWalletFunded && 'Complete both steps below'}
               </p>
             </div>
           </div>
@@ -238,32 +253,45 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
       )}
 
       {/* Configuration Summary */}
-      {isConfigured && (
-        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8">
-          <h2 className="text-2xl font-bold text-white mb-6">Configuration Summary</h2>
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8">
+        <h2 className="text-2xl font-bold text-white mb-6">Configuration Status</h2>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between py-3 border-b border-slate-700">
-              <span className="text-slate-300">Master Wallet</span>
-              <span className={`${config?.masterWalletAddress ? 'text-green-400' : 'text-red-400'}`}>
-                {config?.masterWalletAddress ? '✓ Configured' : '✗ Missing'}
-              </span>
-            </div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between py-3 border-b border-slate-700">
+            <span className="text-slate-300">1. Master Wallet Address</span>
+            <span className={`font-medium ${hasMasterWallet ? 'text-green-400' : 'text-slate-400'}`}>
+              {hasMasterWallet ? '✓ Complete' : '⏳ Pending'}
+            </span>
+          </div>
 
-            <div className="flex items-center justify-between py-3 border-b border-slate-700">
-              <span className="text-slate-300">Gas Wallet</span>
-              <span className={`${config?.gasWalletAddress ? 'text-green-400' : 'text-red-400'}`}>
-                {config?.gasWalletAddress ? '✓ Configured' : '✗ Missing'}
-              </span>
-            </div>
+          <div className="flex items-center justify-between py-3 border-b border-slate-700">
+            <span className="text-slate-300">2. Gas Wallet Funded</span>
+            <span className={`font-medium ${gasWalletFunded ? 'text-green-400' : 'text-slate-400'}`}>
+              {gasWalletFunded ? '✓ Complete' : '⏳ Pending'}
+            </span>
+          </div>
 
-            <div className="flex items-center justify-between py-3">
-              <span className="text-slate-300">Master Mnemonic</span>
-              <span className="text-green-400">✓ In Environment Variable</span>
-            </div>
+          <div className="flex items-center justify-between py-3 border-b border-slate-700">
+            <span className="text-slate-300">Master Mnemonic</span>
+            <span className="text-green-400 font-medium">✓ Environment Variable</span>
+          </div>
+
+          <div className="flex items-center justify-between py-3">
+            <span className="text-slate-300">System Ready</span>
+            <span className={`font-bold text-lg ${isFullyConfigured ? 'text-green-400' : 'text-yellow-400'}`}>
+              {isFullyConfigured ? '✓ Ready' : '⏳ Not Ready'}
+            </span>
           </div>
         </div>
-      )}
+
+        {isFullyConfigured && (
+          <div className="mt-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+            <p className="text-green-400 text-sm font-medium">
+              System is fully configured and ready to accept payments!
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

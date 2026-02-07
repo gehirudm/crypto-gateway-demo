@@ -16,21 +16,30 @@ export async function GET(request: NextRequest) {
     const config = await getAdminConfig()
     
     if (!config) {
+      // Generate gas wallet even if not fully configured
+      const gasWalletAddress = await getOrCreateGasWallet()
+      const gasWalletBalance = await getWalletBalance(gasWalletAddress, 'ETH')
+      
       return NextResponse.json({
         configured: false,
-        error: 'Gateway not configured. Master wallet key required.',
-        requiredSettings: ['Master Wallet Key'],
+        error: 'Gateway not fully configured. Master wallet address required.',
+        gasWalletAddress,
+        gasWalletBalance,
+        gasWalletFunded: gasWalletBalance > 0.01,
+        requiredSettings: ['Master Wallet Address', 'Gas Wallet Funding'],
       })
     }
 
     // Get gas wallet balance
     const gasWalletBalance = await getWalletBalance(config.gas_wallet_address, 'ETH')
+    const isFullyConfigured = config.master_wallet_address && gasWalletBalance > 0.01
 
     return NextResponse.json({
-      configured: true,
+      configured: isFullyConfigured,
       masterWalletAddress: config.master_wallet_address,
       gasWalletAddress: config.gas_wallet_address,
       gasWalletBalance,
+      gasWalletFunded: gasWalletBalance > 0.01,
       createdAt: config.created_at,
     })
   } catch (error) {

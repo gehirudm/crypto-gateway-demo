@@ -61,9 +61,9 @@ export default function InvoicePage() {
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {step === 'form' && (
           <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8">
-            <h1 className="text-3xl font-bold text-white mb-2">Create Invoice</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">Create Payment</h1>
             <p className="text-slate-400 mb-8">
-              Generate a unique wallet address for crypto payment collection
+              Generate a unique payment wallet and receive ETH or USDT funds
             </p>
 
             <form onSubmit={handleCreateInvoice} className="space-y-6">
