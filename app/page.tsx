@@ -11,9 +11,6 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-white">
-                ₿
-              </div>
               <span className="text-xl font-bold text-white">PaymentGateway</span>
             </div>
           </div>
@@ -27,7 +24,7 @@ export default function HomePage() {
             Crypto Payment Gateway
           </h1>
           <p className="text-lg text-slate-300">
-            Accept ETH and USDT payments on Optimism
+            Accept ETH and USDC payments on Optimism
           </p>
         </div>
 
@@ -60,31 +57,12 @@ export default function HomePage() {
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">Create Payment</h2>
             <p className="text-slate-400 mb-4">
-              Generate a new invoice and receive ETH or USDT payments
+              Generate a new invoice and receive ETH or USDC payments
             </p>
             <div className="inline-block px-4 py-2 bg-blue-600/20 group-hover:bg-blue-600/30 text-blue-400 rounded-lg font-medium transition-colors">
               New Invoice
             </div>
           </Link>
-        </div>
-
-        {/* Status Info */}
-        <div className="mt-16 bg-slate-800/30 border border-slate-700 rounded-xl p-8">
-          <h3 className="text-lg font-bold text-white mb-4">Getting Started</h3>
-          <ol className="space-y-3 text-slate-300">
-            <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 w-6 h-6 bg-blue-600/20 rounded-full flex items-center justify-center text-sm font-bold text-blue-400">1</span>
-              <span>Go to Configuration and add your master wallet address</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 w-6 h-6 bg-blue-600/20 rounded-full flex items-center justify-center text-sm font-bold text-blue-400">2</span>
-              <span>View your gas wallet address and send funds to it</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 w-6 h-6 bg-blue-600/20 rounded-full flex items-center justify-center text-sm font-bold text-blue-400">3</span>
-              <span>Once configured, create invoices to receive payments</span>
-            </li>
-          </ol>
         </div>
       </div>
 
@@ -93,9 +71,6 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center gap-2 mb-4 md:mb-0">
-              <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-white text-sm">
-                ₿
-              </div>
               <span className="font-semibold text-white">CryptoGate Demo</span>
             </div>
             <p className="text-sm text-slate-400">

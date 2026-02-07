@@ -1,6 +1,6 @@
 # CryptoGate - Decentralized Payment Gateway
 
-A production-grade cryptocurrency payment gateway for accepting ETH and USDT payments on Optimism with automatic invoice wallet generation, real-time balance monitoring, and intelligent fund sweeping.
+A production-grade cryptocurrency payment gateway for accepting ETH and USDC payments on Optimism with automatic invoice wallet generation, real-time balance monitoring, and intelligent fund sweeping.
 
 ![Status](https://img.shields.io/badge/status-active-success)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -9,7 +9,7 @@ A production-grade cryptocurrency payment gateway for accepting ETH and USDT pay
 ## Features
 
 ### Core Functionality
-- **Dual Currency Support**: Accept both ETH and USDT payments
+- **Dual Currency Support**: Accept both ETH and USDC payments
 - **Unique Invoice Wallets**: Each invoice gets a unique, deterministic wallet address
 - **Non-Custodial**: Never hold user funds - they go directly to invoice wallets
 - **Automatic Sweeping**: Funds automatically transferred to your master wallet after confirmation
@@ -21,7 +21,7 @@ A production-grade cryptocurrency payment gateway for accepting ETH and USDT pay
 - **Serverless Ready**: Polling-based architecture for Vercel deployment
 - **Secure**: Master mnemonic stored only in environment variables
 - **Transparent**: Full transaction history and status tracking
-- **Smart Gas Handling**: Automatic gas prefunding for USDT payments
+- **Smart Gas Handling**: Automatic gas prefunding for USDC payments
 
 ## Quick Start
 
@@ -129,12 +129,12 @@ GET    /api/admin/transactions       View all invoices
 4. Invoice marked complete
 ```
 
-### USDT Payments
+### USDC Payments
 ```
-1. User sends USDT to invoice wallet
-2. System detects USDT received
+1. User sends USDC to invoice wallet
+2. System detects USDC received
 3. Gas automatically prefunded from gas wallet
-4. USDT swept to master wallet
+4. USDC swept to master wallet
 5. Invoice marked complete
 ```
 
@@ -181,11 +181,11 @@ MASTER_MNEMONIC=your_testnet_mnemonic
 
 ### Get Test Funds
 - ETH: https://sepoliafaucet.com
-- USDT: Most faucets provide both
+- USDC: Most faucets provide both
 
 ### Test Checklist
 - [ ] Create ETH invoice and send payment
-- [ ] Create USDT invoice and send payment
+- [ ] Create USDC invoice and send payment
 - [ ] Verify automatic fund sweep
 - [ ] Test admin configuration
 - [ ] Check transaction history
@@ -208,7 +208,7 @@ MASTER_MNEMONIC=your_testnet_mnemonic
 
 ## Future Enhancements
 
-- [ ] Additional tokens (DAI, USDC)
+- [ ] Additional tokens (DAI, USDT)
 - [ ] Multi-chain support
 - [ ] Webhook notifications
 - [ ] Email confirmations
@@ -231,7 +231,7 @@ MASTER_MNEMONIC=your_testnet_mnemonic
 - Check network (must be Optimism)
 - Wait a few blocks for visibility
 
-**USDT sweep fails**
+**USDC sweep fails**
 - Ensure gas wallet has >= 0.005 ETH
 - Send more ETH to gas wallet
 

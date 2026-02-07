@@ -40,8 +40,6 @@ export default function AdminTransactions({ adminToken }: AdminTransactionsProps
 
   useEffect(() => {
     fetchTransactions()
-    const interval = setInterval(fetchTransactions, 5000) // Refresh every 5 seconds
-    return () => clearInterval(interval)
   }, [adminToken])
 
   const copyToClipboard = (text: string, id: string) => {
@@ -263,6 +261,22 @@ export default function AdminTransactions({ adminToken }: AdminTransactionsProps
                     <p className="text-slate-400">Sweep Tx</p>
                     <p className="text-blue-300 font-mono text-xs truncate cursor-pointer hover:text-blue-200">
                       {invoice.sweep_tx_hash.slice(0, 10)}...
+                    </p>
+                  </div>
+                )}
+                {invoice.gas_prefund_amount != null && invoice.gas_prefund_amount > 0 && (
+                  <div>
+                    <p className="text-slate-400">Gas Prefunded</p>
+                    <p className="text-yellow-300 font-medium">
+                      {Number(invoice.gas_prefund_amount).toFixed(10)} ETH
+                    </p>
+                  </div>
+                )}
+                {invoice.gas_prefund_tx_hash && (
+                  <div>
+                    <p className="text-slate-400">Prefund Tx</p>
+                    <p className="text-yellow-300 font-mono text-xs truncate cursor-pointer hover:text-yellow-200">
+                      {invoice.gas_prefund_tx_hash.slice(0, 10)}...
                     </p>
                   </div>
                 )}

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    if (!['ETH', 'USDT'].includes(currency)) {
+    if (!['ETH', 'USDC'].includes(currency)) {
       console.error('[API:CREATE:INVOICE] Unsupported currency:', currency)
       return NextResponse.json({ error: 'Unsupported currency' }, { status: 400 })
     }

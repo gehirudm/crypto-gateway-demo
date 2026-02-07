@@ -8,12 +8,8 @@ const _geist = Geist({ subsets: ['latin'] })
 const _geistMono = Geist_Mono({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Crypto Payment Gateway',
-  description: 'Secure decentralized payment processing via ETH and USDT on Optimism',
-  generator: 'v0.app',
-  icons: {
-    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" fontSize="90" fontWeight="bold" fill="%230EA5E9">₿</text></svg>',
-  },
+  title: 'Crypto Payment Gateway DEMO',
+  description: 'Secure decentralized payment processing via ETH and USDC on Optimism',
 }
 
 export default function RootLayout({

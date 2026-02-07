@@ -1,11 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import { sendTransaction, deriveWalletFromMnemonic } from '@/lib/web3/wallet'
-import { InvoiceWallet, Transaction } from '@/lib/db/types' // Assuming InvoiceWallet and Transaction are defined in a separate file
+import { sendTransaction, deriveWalletFromMnemonic, sweepETH } from '@/lib/web3/wallet'
 
 export interface Invoice {
   id: string
   created_at: string
-  currency: 'ETH' | 'USDT'
+  currency: 'ETH' | 'USDC'
   amount_expected: number
   wallet_address: string
   derivation_index: number
@@ -14,13 +13,15 @@ export interface Invoice {
   confirmation_count: number
   last_checked_at: string
   sweep_tx_hash?: string
+  gas_prefund_amount?: number
+  gas_prefund_tx_hash?: string
 }
 
 /**
  * Create a new invoice with wallet
  */
 export async function createInvoice(params: {
-  currency: 'ETH' | 'USDT'
+  currency: 'ETH' | 'USDC'
   amount: number
   walletAddress: string
   derivationIndex: number
@@ -117,33 +118,48 @@ export async function checkAndSweepInvoice(invoiceId: string): Promise<{ swept: 
     // Derive the wallet for this invoice
     const invoiceWallet = deriveWalletFromMnemonic(masterMnemonic, invoice.derivation_index)
 
-    // Send funds to master wallet
-    const txResult = await sendTransaction(
-      invoiceWallet.privateKey,
-      config.master_wallet_address,
-      invoice.current_balance.toString(),
-      invoice.currency,
-      invoice.currency === 'USDT' ? process.env.NEXT_PUBLIC_USDT_CONTRACT_ADDRESS : undefined
-    )
+    let txHash: string
 
-    if (!txResult) {
-      throw new Error('Failed to send transaction')
+    if (invoice.currency === 'ETH') {
+      // For ETH, use sweepETH which properly accounts for gas fees
+      const sweepResult = await sweepETH(invoiceWallet.privateKey, config.master_wallet_address)
+      
+      if (!sweepResult) {
+        throw new Error('Failed to sweep ETH - balance may be too low to cover gas')
+      }
+      
+      txHash = sweepResult.hash
+    } else {
+      // For USDC, use regular sendTransaction (gas is prefunded separately)
+      const txResult = await sendTransaction(
+        invoiceWallet.privateKey,
+        config.master_wallet_address,
+        invoice.current_balance.toString(),
+        invoice.currency,
+        process.env.NEXT_PUBLIC_USDC_CONTRACT_ADDRESS
+      )
+
+      if (!txResult) {
+        throw new Error('Failed to send transaction')
+      }
+
+      // Wait for confirmation
+      await txResult.wait()
+      
+      txHash = txResult.hash
     }
-
-    // Wait for confirmation
-    await txResult.wait(1)
 
     // Update invoice with sweep tx hash
     await supabase
       .from('invoices')
       .update({
         status: 'completed',
-        sweep_tx_hash: txResult.hash,
+        sweep_tx_hash: txHash,
         last_checked_at: new Date().toISOString(),
       })
       .eq('id', invoiceId)
 
-    return { swept: true, txHash: txResult.hash }
+    return { swept: true, txHash }
   } catch (error) {
     console.error('Error sweeping invoice:', error)
     return { swept: false }

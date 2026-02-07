@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Copy, Check, ArrowLeft, Zap, Clock, AlertCircle } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 
 interface Invoice {
   id: string
@@ -184,6 +185,16 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
           <h3 className="text-lg font-bold text-white mb-4">Payment Instructions</h3>
 
           <div className="space-y-4">
+            {/* QR Code */}
+            <div className="flex justify-center p-6 bg-white rounded-lg">
+              <QRCodeSVG
+                value={invoice.walletAddress}
+                size={200}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+
             <div className="p-4 bg-slate-900/50 rounded-lg">
               <p className="text-xs text-slate-400 mb-2">Send {invoice.currency} to:</p>
               <div className="flex items-center justify-between">
@@ -204,11 +215,11 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
               </p>
             </div>
 
-            {invoice.currency === 'USDT' && (
+            {invoice.currency === 'USDC' && (
               <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p className="text-xs text-blue-300 font-medium mb-1">⚠️ Important for USDT:</p>
+                <p className="text-xs text-blue-300 font-medium mb-1">⚠️ Important for USDC:</p>
                 <p className="text-xs text-blue-300">
-                  Gas fees will be automatically prefunded once payment is detected. You only need to send the USDT amount.
+                  Gas fees will be automatically prefunded once payment is detected. You only need to send the USDC amount.
                 </p>
               </div>
             )}
