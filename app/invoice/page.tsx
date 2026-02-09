@@ -89,7 +89,7 @@ export default function InvoicePage() {
           <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8">
             <h1 className="text-3xl font-bold text-white mb-2">Create Payment</h1>
             <p className="text-slate-400 mb-8">
-              Generate a unique TRON wallet and receive USDT (TRC20) payments
+              Generate a unique wallet and receive USDT (ERC20) payments on Optimism
             </p>
 
             <form onSubmit={handleCreateInvoice} className="space-y-6">
@@ -145,8 +145,8 @@ export default function InvoicePage() {
               <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg flex items-center gap-3">
                 <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center text-green-400 font-bold text-xs">₮</div>
                 <div>
-                  <p className="text-sm font-medium text-white">USDT (TRC20)</p>
-                  <p className="text-xs text-slate-400">Tether USD on TRON Network</p>
+                  <p className="text-sm font-medium text-white">USDT (ERC20)</p>
+                  <p className="text-xs text-slate-400">Tether USD on Optimism Network</p>
                 </div>
               </div>
 

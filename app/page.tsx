@@ -24,7 +24,7 @@ export default function HomePage() {
             Crypto Payment Gateway
           </h1>
           <p className="text-lg text-slate-300">
-            Accept USDT (TRC20) payments on TRON
+            Accept USDT (ERC20) payments on Optimism
           </p>
         </div>
 
@@ -57,7 +57,7 @@ export default function HomePage() {
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">Create Payment</h2>
             <p className="text-slate-400 mb-4">
-              Generate a new invoice and receive USDT TRC20 payments
+              Generate a new invoice and receive USDT payments on Optimism
             </p>
             <div className="inline-block px-4 py-2 bg-blue-600/20 group-hover:bg-blue-600/30 text-blue-400 rounded-lg font-medium transition-colors">
               New Invoice
@@ -74,7 +74,7 @@ export default function HomePage() {
               <span className="font-semibold text-white">CryptoGate Demo</span>
             </div>
             <p className="text-sm text-slate-400">
-              Non-custodial decentralized payments on TRON
+              Non-custodial decentralized payments on Optimism
             </p>
           </div>
         </div>

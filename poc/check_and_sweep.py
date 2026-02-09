@@ -1,17 +1,17 @@
 """
-TRON USDT TRC20 Recovery & Sweep Script
+Optimism USDT ERC20 Recovery & Sweep Script
 
 This script provides standalone recovery and sweep operations for the
-TRON-based payment gateway. It can:
+Optimism-based payment gateway. It can:
 
 1. Derive invoice/merchant wallets from the master mnemonic
-2. Check USDT (TRC20) and TRX balances
+2. Check USDT (ERC20) and ETH balances
 3. Sweep stuck invoices (USDT -> commission to master + remainder to merchant)
-4. Prefund wallets with TRX for gas
+4. Prefund wallets with ETH for gas
 5. List all invoices and their statuses
 
 Dependencies:
-    pip install tronpy mnemonic supabase python-dotenv
+    pip install -r requirements.txt
 
 Usage:
     python check_and_sweep.py
@@ -19,26 +19,26 @@ Usage:
 
 import os
 import time
-import hashlib
-import hmac
-import struct
-from typing import List, Dict, Optional, Tuple
-from tronpy import Tron
-from tronpy.keys import PrivateKey
+from typing import List, Dict, Optional
+from web3 import Web3
+from eth_account import Account
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from mnemonic import Mnemonic
 
 load_dotenv()
 
-# ---------------- CONFIG ----------------
-TRON_API_URL = os.getenv("TRON_RPC_URL", "https://api.trongrid.io")
-TRON_API_KEY = os.getenv("TRON_API_KEY", "")
-USDT_CONTRACT = os.getenv("TRON_USDT_CONTRACT", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")
+# Enable HD wallet features
+Account.enable_unaudited_hdwallet_features()
 
-MNEMONIC = os.getenv("TRON_MASTER_MNEMONIC")
+# ---------------- CONFIG ----------------
+RPC_URL = os.getenv("OPTIMISM_RPC_URL", "https://mainnet.optimism.io")
+USDT_CONTRACT = os.getenv(
+    "OPTIMISM_USDT_CONTRACT", "0x94b008aA00579c1307B0EF2c499aD98a8ce58e68"
+)
+
+MNEMONIC = os.getenv("MASTER_MNEMONIC")
 if not MNEMONIC:
-    raise ValueError("TRON_MASTER_MNEMONIC not set in environment variables")
+    raise ValueError("MASTER_MNEMONIC not set in environment variables")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -47,117 +47,80 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-# Fee limit for TRC20 transfers (in SUN) - 150 TRX
-FEE_LIMIT = 150_000_000
-SUN_PER_TRX = 1_000_000
-DEFAULT_PREFUND_TRX = 80  # Enough for ~2 USDT transfers
+# Default prefund amount in ETH (enough for ~2 ERC20 transfers on Optimism L2)
+DEFAULT_PREFUND_ETH = 0.002
 
-# Create Tron client
-client = Tron(network="mainnet")
+# Minimal ERC20 ABI for balanceOf and transfer
+ERC20_ABI = [
+    {
+        "constant": True,
+        "inputs": [{"name": "owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "type": "function",
+    },
+    {
+        "constant": False,
+        "inputs": [
+            {"name": "to", "type": "address"},
+            {"name": "amount", "type": "uint256"},
+        ],
+        "name": "transfer",
+        "outputs": [{"name": "", "type": "bool"}],
+        "type": "function",
+    },
+]
 
-
-# ================== BIP32 HD KEY DERIVATION ==================
-
-SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-HARDENED_OFFSET = 0x80000000
-
-
-def _hmac_sha512(key: bytes, data: bytes) -> bytes:
-    return hmac.new(key, data, hashlib.sha512).digest()
-
-
-def _derive_master_key(seed: bytes) -> Tuple[bytes, bytes]:
-    """Derive master private key and chain code from seed."""
-    I = _hmac_sha512(b"Bitcoin seed", seed)
-    return I[:32], I[32:]
-
-
-def _derive_child_key_hardened(
-    parent_key: bytes, parent_chain: bytes, index: int
-) -> Tuple[bytes, bytes]:
-    """Derive a hardened child key."""
-    data = b"\x00" + parent_key + struct.pack(">I", index)
-    I = _hmac_sha512(parent_chain, data)
-    child_key_int = (
-        int.from_bytes(I[:32], "big") + int.from_bytes(parent_key, "big")
-    ) % SECP256K1_ORDER
-    child_key = child_key_int.to_bytes(32, "big")
-    return child_key, I[32:]
+# Create Web3 client
+w3 = Web3(Web3.HTTPProvider(RPC_URL))
+usdt_contract = w3.eth.contract(
+    address=Web3.to_checksum_address(USDT_CONTRACT), abi=ERC20_ABI
+)
 
 
-def _derive_child_key_normal(
-    parent_key: bytes, parent_chain: bytes, index: int
-) -> Tuple[bytes, bytes]:
-    """Derive a normal (non-hardened) child key using the compressed public key."""
-    priv = PrivateKey(parent_key)
-    # Get compressed public key (33 bytes)
-    pub_hex = priv.public_key.hex()
-    pub_bytes = bytes.fromhex(pub_hex)
-
-    data = pub_bytes + struct.pack(">I", index)
-    I = _hmac_sha512(parent_chain, data)
-    child_key_int = (
-        int.from_bytes(I[:32], "big") + int.from_bytes(parent_key, "big")
-    ) % SECP256K1_ORDER
-    child_key = child_key_int.to_bytes(32, "big")
-    return child_key, I[32:]
+# ================== WALLET DERIVATION ==================
 
 
-def derive_wallet(mnemonic_phrase: str, path: str) -> Tuple[str, bytes]:
+def derive_invoice_wallet(index: int):
     """
-    Derive a TRON wallet address and private key from mnemonic and BIP44 path.
-
-    Path format: m/44'/195'/account'/change/index
-    For invoices: m/44'/195'/0'/0/index (index 0 = gas wallet)
-    For merchants: m/44'/195'/1'/0/index
+    Derive invoice wallet from mnemonic.
+    BIP44 path: m/44'/60'/0'/0/{index}
+    Index 0 = gas wallet, 1+ = invoice wallets.
+    Returns (address, account).
     """
-    mnemo = Mnemonic("english")
-    seed = mnemo.to_seed(mnemonic_phrase, passphrase="")
-
-    components = path.replace("m/", "").split("/")
-    key, chain = _derive_master_key(seed)
-
-    for comp in components:
-        if comp.endswith("'"):
-            idx = int(comp[:-1]) + HARDENED_OFFSET
-            key, chain = _derive_child_key_hardened(key, chain, idx)
-        else:
-            idx = int(comp)
-            key, chain = _derive_child_key_normal(key, chain, idx)
-
-    priv = PrivateKey(key)
-    address = priv.public_key.to_base58check_address()
-
-    return address, key
+    acct = Account.from_mnemonic(MNEMONIC, account_path=f"m/44'/60'/0'/0/{index}")
+    return acct.address, acct
 
 
-def derive_invoice_wallet(index: int) -> Tuple[str, bytes]:
-    """Derive invoice wallet. Index 0 = gas wallet, 1+ = invoices."""
-    return derive_wallet(MNEMONIC, f"m/44'/195'/0'/0/{index}")
-
-
-def derive_merchant_wallet(index: int) -> Tuple[str, bytes]:
-    """Derive merchant wallet at separate account path."""
-    return derive_wallet(MNEMONIC, f"m/44'/195'/1'/0/{index}")
+def derive_merchant_wallet(index: int):
+    """
+    Derive merchant wallet from mnemonic.
+    BIP44 path: m/44'/60'/1'/0/{index}
+    Returns (address, account).
+    """
+    acct = Account.from_mnemonic(MNEMONIC, account_path=f"m/44'/60'/1'/0/{index}")
+    return acct.address, acct
 
 
 # ================== BALANCE FUNCTIONS ==================
 
 
-def get_trx_balance(address: str) -> float:
-    """Get TRX balance of an address in TRX units."""
+def get_eth_balance(address: str) -> float:
+    """Get ETH balance of an address in ETH units."""
     try:
-        balance = client.get_account_balance(address)
-        return float(balance)
-    except Exception:
+        balance = w3.eth.get_balance(Web3.to_checksum_address(address))
+        return float(w3.from_wei(balance, "ether"))
+    except Exception as e:
+        print(f"  [WARN] Failed to get ETH balance for {address}: {e}")
         return 0.0
 
 
 def get_usdt_balance(address: str) -> float:
-    """Get USDT TRC20 balance in USDT units (6 decimals)."""
+    """Get USDT ERC20 balance in USDT units (6 decimals)."""
     try:
-        contract = client.get_contract(USDT_CONTRACT)
-        raw = contract.functions.balanceOf(address)
+        raw = usdt_contract.functions.balanceOf(
+            Web3.to_checksum_address(address)
+        ).call()
         return float(raw) / 1e6
     except Exception as e:
         print(f"  [WARN] Failed to get USDT balance for {address}: {e}")
@@ -167,63 +130,91 @@ def get_usdt_balance(address: str) -> float:
 # ================== TRANSFER FUNCTIONS ==================
 
 
-def send_trx(from_key: bytes, to_address: str, amount_trx: float) -> Optional[str]:
-    """Send TRX from a wallet. Returns txid or None."""
+def send_eth(from_acct, to_address: str, amount_eth: float) -> Optional[str]:
+    """Send ETH from a wallet. Returns tx hash or None."""
     try:
-        priv = PrivateKey(from_key)
-        from_address = priv.public_key.to_base58check_address()
-        amount_sun = int(amount_trx * SUN_PER_TRX)
+        to = Web3.to_checksum_address(to_address)
+        value = w3.to_wei(amount_eth, "ether")
+        nonce = w3.eth.get_transaction_count(from_acct.address)
 
-        txn = (
-            client.trx.transfer(from_address, to_address, amount_sun)
-            .build()
-            .sign(priv)
-        )
-        result = txn.broadcast()
-        txid = result.get("txid", "")
-        print(f"  [TRX] Sent {amount_trx} TRX -> {to_address} | txid: {txid}")
-        return txid
+        tx = {
+            "to": to,
+            "value": value,
+            "gas": 21000,
+            "nonce": nonce,
+            "chainId": w3.eth.chain_id,
+        }
+
+        # Use EIP-1559 fees (Optimism supports this)
+        fee_data = w3.eth.fee_history(1, "latest", [50])
+        base_fee = fee_data["baseFeePerGas"][-1]
+        tx["maxFeePerGas"] = base_fee * 2
+        tx["maxPriorityFeePerGas"] = w3.to_wei(0.001, "gwei")
+
+        signed = from_acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        if receipt.status == 1:
+            print(f"  [ETH] Sent {amount_eth:.6f} ETH -> {to_address} | tx: {tx_hash.hex()}")
+            return tx_hash.hex()
+        else:
+            print(f"  [ERROR] ETH transfer reverted!")
+            return None
     except Exception as e:
-        print(f"  [ERROR] Failed to send TRX: {e}")
+        print(f"  [ERROR] Failed to send ETH: {e}")
         return None
 
 
-def send_usdt(
-    from_key: bytes, to_address: str, amount_usdt: float
-) -> Optional[str]:
-    """Send USDT TRC20 from a wallet. Returns txid or None."""
+def send_usdt(from_acct, to_address: str, amount_usdt: float) -> Optional[str]:
+    """Send USDT ERC20 from a wallet. Returns tx hash or None."""
     try:
-        priv = PrivateKey(from_key)
-        from_address = priv.public_key.to_base58check_address()
+        to = Web3.to_checksum_address(to_address)
         raw_amount = int(amount_usdt * 1e6)
+        nonce = w3.eth.get_transaction_count(from_acct.address)
 
-        contract = client.get_contract(USDT_CONTRACT)
-        txn = (
-            contract.functions.transfer(to_address, raw_amount)
-            .with_owner(from_address)
-            .fee_limit(FEE_LIMIT)
-            .build()
-            .sign(priv)
+        tx = usdt_contract.functions.transfer(to, raw_amount).build_transaction(
+            {
+                "from": from_acct.address,
+                "nonce": nonce,
+                "chainId": w3.eth.chain_id,
+            }
         )
-        result = txn.broadcast()
-        txid = result.get("txid", "")
-        print(f"  [USDT] Sent {amount_usdt:.4f} USDT -> {to_address} | txid: {txid}")
-        return txid
+
+        # Use EIP-1559 fees
+        fee_data = w3.eth.fee_history(1, "latest", [50])
+        base_fee = fee_data["baseFeePerGas"][-1]
+        tx["maxFeePerGas"] = base_fee * 2
+        tx["maxPriorityFeePerGas"] = w3.to_wei(0.001, "gwei")
+
+        gas_estimate = w3.eth.estimate_gas(tx)
+        tx["gas"] = int(gas_estimate * 1.2)
+
+        signed = from_acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        if receipt.status == 1:
+            print(f"  [USDT] Sent {amount_usdt:.4f} USDT -> {to_address} | tx: {tx_hash.hex()}")
+            return tx_hash.hex()
+        else:
+            print(f"  [ERROR] USDT transfer reverted!")
+            return None
     except Exception as e:
         print(f"  [ERROR] Failed to send USDT: {e}")
         return None
 
 
-def prefund_with_trx(to_address: str, amount_trx: float = DEFAULT_PREFUND_TRX) -> Optional[str]:
-    """Prefund a wallet with TRX from the gas wallet."""
-    gas_address, gas_key = derive_invoice_wallet(0)
-    gas_balance = get_trx_balance(gas_address)
+def prefund_with_eth(to_address: str, amount_eth: float = DEFAULT_PREFUND_ETH) -> Optional[str]:
+    """Prefund a wallet with ETH from the gas wallet (index 0)."""
+    gas_address, gas_acct = derive_invoice_wallet(0)
+    gas_balance = get_eth_balance(gas_address)
 
-    if gas_balance < amount_trx + 2:
-        print(f"  [WARN] Gas wallet only has {gas_balance:.2f} TRX, need {amount_trx + 2}")
+    if gas_balance < amount_eth + 0.0005:
+        print(f"  [WARN] Gas wallet only has {gas_balance:.6f} ETH, need {amount_eth + 0.0005:.6f}")
         return None
 
-    return send_trx(gas_key, to_address, amount_trx)
+    return send_eth(gas_acct, to_address, amount_eth)
 
 
 # ================== DATABASE FUNCTIONS ==================
@@ -242,7 +233,7 @@ def get_pending_invoices() -> List[Dict]:
     result = (
         supabase.table("invoices")
         .select("*, merchants(name, derived_wallet_address, external_wallet_address)")
-        .in_("status", ["pending", "confirming", "prefunding", "sweeping"])
+        .in_("status", ["pending", "received", "prefunding", "sweeping"])
         .execute()
     )
     return result.data or []
@@ -287,8 +278,8 @@ def check_and_sweep_invoice(invoice: Dict, config: Dict) -> bool:
     print(f"  Wallet: {wallet_address}")
 
     usdt_balance = get_usdt_balance(wallet_address)
-    trx_balance = get_trx_balance(wallet_address)
-    print(f"  Balance: {usdt_balance:.6f} USDT, {trx_balance:.2f} TRX")
+    eth_balance = get_eth_balance(wallet_address)
+    print(f"  Balance: {usdt_balance:.6f} USDT, {eth_balance:.6f} ETH")
 
     update_invoice(invoice_id, {"current_balance": str(usdt_balance)})
 
@@ -304,58 +295,64 @@ def check_and_sweep_invoice(invoice: Dict, config: Dict) -> bool:
     merchant_wallet = merchant.get("derived_wallet_address", "") if merchant else ""
 
     print(f"  Fully paid! Sweeping...")
-    print(f"  Commission: {commission_amount:.4f} USDT ({commission_rate}%) -> {master_wallet[:10]}...")
-    print(f"  Merchant:   {merchant_amount:.4f} USDT -> {merchant_wallet[:10] if merchant_wallet else 'N/A'}...")
+    print(f"  Commission: {commission_amount:.4f} USDT ({commission_rate}%) -> {master_wallet[:12]}...")
+    print(f"  Merchant:   {merchant_amount:.4f} USDT -> {merchant_wallet[:12] if merchant_wallet else 'N/A'}...")
 
     if not merchant_wallet:
         print(f"  [ERROR] No merchant wallet address found!")
         return False
 
-    # Step 1: Prefund with TRX if needed
-    if trx_balance < 20:
-        print(f"  Prefunding with TRX...")
-        prefund_tx = prefund_with_trx(wallet_address)
+    # Step 1: Prefund with ETH for gas if needed
+    if eth_balance < 0.0005:
+        print(f"  Prefunding with ETH for gas...")
+        prefund_tx = prefund_with_eth(wallet_address)
         if not prefund_tx:
             print(f"  [ERROR] Prefunding failed!")
             update_invoice(invoice_id, {"status": "prefunding"})
             return False
 
-        update_invoice(invoice_id, {
-            "status": "prefunding",
-            "gas_prefund_tx_hash": prefund_tx,
-            "gas_prefund_amount": str(DEFAULT_PREFUND_TRX),
-        })
+        update_invoice(
+            invoice_id,
+            {
+                "status": "prefunding",
+                "gas_prefund_tx_hash": prefund_tx,
+                "gas_prefund_amount": str(DEFAULT_PREFUND_ETH),
+            },
+        )
 
-        print(f"  Waiting for TRX prefund to confirm...")
-        time.sleep(10)
+        print(f"  Waiting for ETH prefund to confirm...")
+        time.sleep(5)
 
     # Derive the invoice wallet's private key
-    _, invoice_key = derive_invoice_wallet(derivation_index)
+    _, invoice_acct = derive_invoice_wallet(derivation_index)
 
     # Step 2: Send commission to master wallet
     update_invoice(invoice_id, {"status": "sweeping"})
 
     commission_tx = None
     if commission_amount > 0.01:
-        commission_tx = send_usdt(invoice_key, master_wallet, commission_amount)
+        commission_tx = send_usdt(invoice_acct, master_wallet, commission_amount)
         if commission_tx:
             update_invoice(invoice_id, {"commission_tx_hash": commission_tx})
             print(f"  Waiting between transfers...")
-            time.sleep(8)
+            time.sleep(5)
         else:
             print(f"  [ERROR] Commission transfer failed!")
             return False
 
     # Step 3: Send remainder to merchant derived wallet
-    merchant_tx = send_usdt(invoice_key, merchant_wallet, merchant_amount)
+    merchant_tx = send_usdt(invoice_acct, merchant_wallet, merchant_amount)
     if merchant_tx:
-        update_invoice(invoice_id, {
-            "status": "completed",
-            "merchant_tx_hash": merchant_tx,
-            "commission_amount": str(commission_amount),
-            "merchant_amount": str(merchant_amount),
-        })
-        print(f"  Sweep complete!")
+        update_invoice(
+            invoice_id,
+            {
+                "status": "completed",
+                "merchant_tx_hash": merchant_tx,
+                "commission_amount": str(commission_amount),
+                "merchant_amount": str(merchant_amount),
+            },
+        )
+        print(f"  ✅ Sweep complete!")
         return True
     else:
         print(f"  [ERROR] Merchant transfer failed!")
@@ -367,7 +364,13 @@ def check_and_sweep_invoice(invoice: Dict, config: Dict) -> bool:
 
 def sweep_merchant_to_external(merchant_id: str):
     """Sweep all USDT from a merchant's derived wallet to their external wallet."""
-    result = supabase.table("merchants").select("*").eq("id", merchant_id).single().execute()
+    result = (
+        supabase.table("merchants")
+        .select("*")
+        .eq("id", merchant_id)
+        .single()
+        .execute()
+    )
     merchant = result.data
 
     if not merchant:
@@ -387,24 +390,25 @@ def sweep_merchant_to_external(merchant_id: str):
     print(f"  External: {external_address}")
 
     usdt_balance = get_usdt_balance(derived_address)
-    trx_balance = get_trx_balance(derived_address)
-    print(f"  Balance: {usdt_balance:.4f} USDT, {trx_balance:.2f} TRX")
+    eth_balance = get_eth_balance(derived_address)
+    print(f"  Balance: {usdt_balance:.4f} USDT, {eth_balance:.6f} ETH")
 
     if usdt_balance < 0.01:
         print(f"  No USDT to sweep.")
         return
 
-    if trx_balance < 15:
-        print(f"  Prefunding with TRX...")
-        prefund_with_trx(derived_address, DEFAULT_PREFUND_TRX)
-        time.sleep(10)
+    # Prefund with ETH if gas is too low
+    if eth_balance < 0.0003:
+        print(f"  Prefunding with ETH for gas...")
+        prefund_with_eth(derived_address, DEFAULT_PREFUND_ETH / 2)
+        time.sleep(5)
 
-    _, merchant_key = derive_merchant_wallet(derivation_index)
-    tx = send_usdt(merchant_key, external_address, usdt_balance)
+    _, merchant_acct = derive_merchant_wallet(derivation_index)
+    tx = send_usdt(merchant_acct, external_address, usdt_balance)
     if tx:
-        print(f"  Swept {usdt_balance:.4f} USDT to external wallet")
+        print(f"  ✅ Swept {usdt_balance:.4f} USDT to external wallet")
     else:
-        print(f"  Sweep failed!")
+        print(f"  ❌ Sweep failed!")
 
 
 # ================== DISPLAY FUNCTIONS ==================
@@ -436,40 +440,46 @@ def list_invoices():
 
 def list_merchants():
     """List all merchants with balances."""
-    result = supabase.table("merchants").select("*").order("created_at", desc=True).execute()
+    result = (
+        supabase.table("merchants")
+        .select("*")
+        .order("created_at", desc=True)
+        .execute()
+    )
     merchants = result.data or []
 
     if not merchants:
         print("No merchants found.")
         return
 
-    print(f"\n{'='*100}")
-    print(f"{'Name':<20} {'Active':<8} {'Derived Wallet':<36} {'USDT':<12} {'TRX':<12}")
-    print(f"{'='*100}")
+    print(f"\n{'='*110}")
+    print(f"{'Name':<20} {'Active':<8} {'Derived Wallet':<44} {'USDT':<12} {'ETH':<14}")
+    print(f"{'='*110}")
 
     for m in merchants:
         usdt = get_usdt_balance(m["derived_wallet_address"])
-        trx = get_trx_balance(m["derived_wallet_address"])
+        eth = get_eth_balance(m["derived_wallet_address"])
         print(
             f"{m['name']:<20} "
             f"{'Y' if m['is_active'] else 'N':<8} "
-            f"{m['derived_wallet_address']:<36} "
+            f"{m['derived_wallet_address']:<44} "
             f"{usdt:<12.4f} "
-            f"{trx:<12.2f}"
+            f"{eth:<14.6f}"
         )
 
 
 def check_gas_wallet():
     """Show gas wallet status."""
     gas_address, _ = derive_invoice_wallet(0)
-    trx = get_trx_balance(gas_address)
+    eth = get_eth_balance(gas_address)
     usdt = get_usdt_balance(gas_address)
 
     print(f"\n=== Gas Wallet ===")
     print(f"  Address: {gas_address}")
-    print(f"  TRX Balance: {trx:.2f} TRX")
+    print(f"  ETH Balance: {eth:.6f} ETH")
     print(f"  USDT Balance: {usdt:.6f} USDT")
-    print(f"  Status: {'Funded' if trx > 10 else 'LOW - needs funding!'}")
+    print(f"  Explorer: https://optimistic.etherscan.io/address/{gas_address}")
+    print(f"  Status: {'✅ Funded' if eth > 0.001 else '⚠️  LOW - needs funding!'}")
 
 
 def sweep_all_pending():
@@ -502,7 +512,7 @@ def sweep_all_pending():
 def main():
     """Interactive menu."""
     print("=" * 60)
-    print("  TRON USDT TRC20 Payment Gateway - Recovery & Sweep Tool")
+    print("  Optimism USDT ERC20 Gateway - Recovery & Sweep Tool")
     print("=" * 60)
 
     while True:
@@ -512,7 +522,7 @@ def main():
         print("3. List merchants & balances")
         print("4. Sweep all pending invoices")
         print("5. Sweep specific merchant to external wallet")
-        print("6. Prefund a wallet with TRX")
+        print("6. Prefund a wallet with ETH")
         print("7. Check specific invoice wallet balance")
         print("0. Exit")
 
@@ -536,10 +546,10 @@ def main():
                 sweep_merchant_to_external(merchant_id)
 
         elif choice == "6":
-            address = input("Enter TRON address to prefund: ").strip()
-            amount = input(f"Enter TRX amount (default {DEFAULT_PREFUND_TRX}): ").strip()
-            amount_trx = float(amount) if amount else DEFAULT_PREFUND_TRX
-            prefund_with_trx(address, amount_trx)
+            address = input("Enter address to prefund: ").strip()
+            amount = input(f"Enter ETH amount (default {DEFAULT_PREFUND_ETH}): ").strip()
+            amount_eth = float(amount) if amount else DEFAULT_PREFUND_ETH
+            prefund_with_eth(address, amount_eth)
 
         elif choice == "7":
             index = input("Enter derivation index: ").strip()
@@ -547,7 +557,8 @@ def main():
                 addr, _ = derive_invoice_wallet(int(index))
                 print(f"  Address: {addr}")
                 print(f"  USDT: {get_usdt_balance(addr):.6f}")
-                print(f"  TRX:  {get_trx_balance(addr):.2f}")
+                print(f"  ETH:  {get_eth_balance(addr):.6f}")
+                print(f"  Explorer: https://optimistic.etherscan.io/address/{addr}")
 
         elif choice == "0":
             print("Bye!")

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getTRXBalance, isValidTronAddress } from '@/lib/tron/wallet'
+import { getETHBalance, isValidAddress } from '@/lib/evm/wallet'
 import { getOrCreateGasWallet, getAdminConfig } from '@/lib/db/admin'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -27,19 +27,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (!config) {
-      const gasWalletBalance = await getTRXBalance(gasWalletAddress)
+      const gasWalletBalance = await getETHBalance(gasWalletAddress)
 
       return NextResponse.json({
         configured: false,
         gasWalletAddress,
         gasWalletBalance,
-        gasWalletFunded: gasWalletBalance > 10,
+        gasWalletFunded: gasWalletBalance > 0.001,
         commissionRate: 5.0,
       })
     }
 
-    const gasWalletBalance = await getTRXBalance(gasWalletAddress)
-    const isFullyConfigured = !!config.master_wallet_address && gasWalletBalance > 10
+    const gasWalletBalance = await getETHBalance(gasWalletAddress)
+    const isFullyConfigured = !!config.master_wallet_address && gasWalletBalance > 0.001
 
     return NextResponse.json({
       configured: isFullyConfigured,
@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Master wallet address required' }, { status: 400 })
     }
 
-    if (!isValidTronAddress(masterWalletAddress)) {
-      return NextResponse.json({ error: 'Invalid TRON wallet address' }, { status: 400 })
+    if (!isValidAddress(masterWalletAddress)) {
+      return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 })
     }
 
     if (commissionRate !== undefined && (commissionRate < 0 || commissionRate > 100)) {
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const gasBalance = await getTRXBalance(gasWalletAddress)
+    const gasBalance = await getETHBalance(gasWalletAddress)
 
     return NextResponse.json({
       success: true,

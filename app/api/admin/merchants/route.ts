@@ -3,13 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createMerchant, getMerchants, updateMerchant } from '@/lib/db/merchants'
 import {
   getUSDTBalance,
-  getTRXBalance,
-  isValidTronAddress,
+  getETHBalance,
+  isValidAddress,
   deriveMerchantWallet,
   getMasterMnemonic,
   prefundMerchantWallet,
   sweepUSDT,
-} from '@/lib/tron/wallet'
+} from '@/lib/evm/wallet'
 
 function verifyAdmin(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization')
@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
     // Fetch balances for each merchant
     const merchantsWithBalances = await Promise.all(
       merchants.map(async (merchant) => {
-        const [usdtBalance, trxBalance] = await Promise.all([
+        const [usdtBalance, ethBalance] = await Promise.all([
           getUSDTBalance(merchant.derived_wallet_address),
-          getTRXBalance(merchant.derived_wallet_address),
+          getETHBalance(merchant.derived_wallet_address),
         ])
-        return { ...merchant, usdtBalance, trxBalance }
+        return { ...merchant, usdtBalance, ethBalance }
       })
     )
 
@@ -61,8 +61,8 @@ export async function POST(request: NextRequest) {
         if (!name) {
           return NextResponse.json({ error: 'Merchant name required' }, { status: 400 })
         }
-        if (externalWalletAddress && !isValidTronAddress(externalWalletAddress)) {
-          return NextResponse.json({ error: 'Invalid TRON wallet address' }, { status: 400 })
+        if (externalWalletAddress && !isValidAddress(externalWalletAddress)) {
+          return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 })
         }
         const merchant = await createMerchant(name, externalWalletAddress || '')
         return NextResponse.json({ success: true, merchant })
@@ -73,8 +73,8 @@ export async function POST(request: NextRequest) {
         if (!merchantId) {
           return NextResponse.json({ error: 'Merchant ID required' }, { status: 400 })
         }
-        if (externalWalletAddress && !isValidTronAddress(externalWalletAddress)) {
-          return NextResponse.json({ error: 'Invalid TRON wallet address' }, { status: 400 })
+        if (externalWalletAddress && !isValidAddress(externalWalletAddress)) {
+          return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 })
         }
         const updates: Record<string, any> = {}
         if (name !== undefined) updates.name = name
@@ -119,13 +119,13 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'No USDT to sweep' }, { status: 400 })
         }
 
-        // Check TRX for gas
-        const trxBalance = await getTRXBalance(merchant.derived_wallet_address)
-        if (trxBalance < 30) {
+        // Check ETH for gas
+        const ethBalance = await getETHBalance(merchant.derived_wallet_address)
+        if (ethBalance < 0.0005) {
           const prefundResult = await prefundMerchantWallet(merchant.derived_wallet_address)
           if (!prefundResult) {
             return NextResponse.json(
-              { error: 'Failed to prefund merchant wallet with TRX for gas' },
+              { error: 'Failed to prefund merchant wallet with ETH for gas' },
               { status: 500 }
             )
           }

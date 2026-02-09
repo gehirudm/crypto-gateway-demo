@@ -1,8 +1,6 @@
-# TRON blockchain library
-tronpy>=0.4.0
-
-# BIP39 mnemonic support
-mnemonic>=0.21
+# Web3 for Optimism (EVM)
+web3>=6.0.0
+eth-account>=0.11.0
 
 # Supabase client
 supabase>=2.9.0
@@ -13,3 +11,6 @@ python-dotenv>=1.0.1
 
 # Optional: For better console output
 rich>=13.7.0
+
+# Optional: QR code generation (for payment.py)
+qrcode>=7.4

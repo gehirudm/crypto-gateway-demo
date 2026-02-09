@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminConfig } from '@/lib/db/admin'
-import { sweepTRX, getGasWallet, getTRXBalance } from '@/lib/tron/wallet'
+import { sweepETH, getGasWallet, getETHBalance } from '@/lib/evm/wallet'
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,13 +17,13 @@ export async function POST(request: NextRequest) {
     }
 
     const gasWallet = getGasWallet()
-    const gasBalance = await getTRXBalance(gasWallet.address)
+    const gasBalance = await getETHBalance(gasWallet.address)
 
     if (gasBalance <= 0) {
       return NextResponse.json({ error: 'Gas wallet has no balance to sweep' }, { status: 400 })
     }
 
-    const result = await sweepTRX(gasWallet.privateKey, config.master_wallet_address)
+    const result = await sweepETH(gasWallet.privateKey, config.master_wallet_address)
     if (!result) {
       return NextResponse.json(
         { error: 'Failed to sweep. Balance too low for fees.' },
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const newBalance = await getTRXBalance(gasWallet.address)
+    const newBalance = await getETHBalance(gasWallet.address)
 
     return NextResponse.json({
       success: true,

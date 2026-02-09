@@ -86,7 +86,7 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
     switch (status) {
       case 'completed': return '✓ Completed'
       case 'sweeping': return '⚡ Sweeping Funds'
-      case 'prefunding': return '⛽ Prefunding TRX for Gas'
+      case 'prefunding': return '⛽ Prefunding ETH for Gas'
       case 'received': return '💰 Payment Received'
       case 'pending': return '⏳ Waiting for Payment'
       default: return status
@@ -171,7 +171,7 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
             </div>
 
             <div className="p-4 bg-slate-900/50 rounded-lg">
-              <p className="text-xs text-slate-400 mb-2">Send USDT (TRC20) to:</p>
+              <p className="text-xs text-slate-400 mb-2">Send USDT (ERC20) to:</p>
               <div className="flex items-center justify-between">
                 <code className="text-sm text-blue-300 font-mono break-all">{invoice.walletAddress}</code>
                 <button
@@ -193,9 +193,9 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
             <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
               <p className="text-xs text-blue-300 font-medium mb-1">⚠️ Important:</p>
               <p className="text-xs text-blue-300">
-                Send <strong>USDT (TRC20)</strong> on the <strong>TRON network</strong> only. 
-                Do not send tokens on other networks (ERC20, BEP20, etc.) — they will be lost.
-                Gas fees (TRX) are handled automatically after payment is detected.
+                Send <strong>USDT (ERC20)</strong> on the <strong>Optimism network</strong> only. 
+                Do not send tokens on other networks (TRON TRC20, BNB BEP20, etc.) — they will be lost.
+                Gas fees (ETH) are handled automatically after payment is detected.
               </p>
             </div>
           </div>
@@ -245,8 +245,8 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
         <div className="text-xs font-mono text-slate-500 space-y-1">
           <p>Last Updated: {lastUpdate.toLocaleTimeString()}</p>
           <p>Polling: {isPolling ? 'Active (every 3s)' : 'Stopped'}</p>
-          <p>Network: TRON Mainnet</p>
-          <p>Token: USDT TRC20</p>
+          <p>Network: Optimism</p>
+          <p>Token: USDT ERC20</p>
         </div>
       </div>
     </div>

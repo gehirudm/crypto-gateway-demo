@@ -1,19 +1,25 @@
 import json
+import os
 import time
 from pathlib import Path
 from web3 import Web3
 from eth_account import Account
 import qrcode
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ---------------- CONFIG ----------------
 Account.enable_unaudited_hdwallet_features()
 
-RPC_URL = "https://mainnet.optimism.io"
+RPC_URL = os.getenv("OPTIMISM_RPC_URL", "https://mainnet.optimism.io")
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 
-MNEMONIC = "metal high topic pass cannon mushroom gossip dizzy match quality wear thunder"
+MNEMONIC = os.getenv("MASTER_MNEMONIC", "")
+if not MNEMONIC:
+    raise ValueError("MASTER_MNEMONIC not set in environment variables")
 
-MASTER_ADDRESS = "0x3960a057230648EE68c7EE8050c1714Ed8C67562"
+MASTER_ADDRESS = os.getenv("MASTER_WALLET_ADDRESS", "")
 
 INVOICE_FILE = Path("invoices.json")
 

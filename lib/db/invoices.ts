@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { deriveInvoiceWallet, sendUSDT, getUSDTBalance, getMasterMnemonic } from '@/lib/tron/wallet'
+import { deriveInvoiceWallet, sendUSDT, getUSDTBalance, getMasterMnemonic } from '@/lib/evm/wallet'
 
 export interface Invoice {
   id: string
@@ -22,7 +22,7 @@ export interface Invoice {
 }
 
 /**
- * Create a new invoice with derived TRON wallet
+ * Create a new invoice with derived EVM wallet
  */
 export async function createInvoice(params: {
   merchantId: string
@@ -104,12 +104,25 @@ export async function checkAndSweepInvoice(invoiceId: string): Promise<{
 }> {
   try {
     const supabase = await createClient()
-    const invoice = await getInvoice(invoiceId)
 
-    if (!invoice) {
-      throw new Error('Invoice not found')
+    // Atomic lock: only proceed if we can claim this invoice
+    // This prevents concurrent sweeps on the same invoice
+    const { data: claimed, error: claimError } = await supabase
+      .from('invoices')
+      .update({ status: 'sweeping', last_checked_at: new Date().toISOString() })
+      .eq('id', invoiceId)
+      .in('status', ['received', 'prefunding', 'sweeping'])
+      .select()
+      .single()
+
+    if (claimError || !claimed) {
+      console.log(`[SWEEP] Invoice ${invoiceId} already completed or locked, skipping`)
+      // Check if it was already completed successfully
+      const invoice = await getInvoice(invoiceId)
+      return { swept: invoice?.status === 'completed' }
     }
 
+    const invoice = claimed as Invoice
     const mnemonic = getMasterMnemonic()
 
     // Get admin config for master wallet and commission rate
@@ -147,7 +160,6 @@ export async function checkAndSweepInvoice(invoiceId: string): Promise<{
     // Calculate commission and merchant amounts
     const commissionRate = Number(config.commission_rate) / 100
     const commissionAmount = Math.floor(usdtBalance * commissionRate * 1_000_000) / 1_000_000
-    const merchantAmount = Math.floor((usdtBalance - commissionAmount) * 1_000_000) / 1_000_000
 
     let commissionTxHash: string | undefined
     let merchantTxHash: string | undefined
@@ -172,6 +184,11 @@ export async function checkAndSweepInvoice(invoiceId: string): Promise<{
       // Wait for confirmation before next transfer
       await new Promise((resolve) => setTimeout(resolve, 5000))
     }
+
+    // Re-read actual remaining balance for merchant transfer
+    // This ensures we send exactly what's left, not a pre-calculated amount
+    const remainingBalance = await getUSDTBalance(invoice.wallet_address)
+    const merchantAmount = Math.floor(remainingBalance * 1_000_000) / 1_000_000
 
     // Send remainder to merchant's derived wallet
     if (merchantAmount > 0.001) {

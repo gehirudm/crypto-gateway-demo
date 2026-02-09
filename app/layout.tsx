@@ -9,7 +9,7 @@ const _geistMono = Geist_Mono({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Crypto Payment Gateway DEMO',
-  description: 'Secure decentralized payment processing via USDT TRC20 on TRON',
+  description: 'Secure decentralized payment processing via USDT ERC20 on Optimism',
 }
 
 export default function RootLayout({

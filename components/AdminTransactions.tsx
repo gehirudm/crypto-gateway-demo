@@ -70,8 +70,8 @@ export default function AdminTransactions({ adminToken }: AdminTransactionsProps
     }
   }
 
-  const tronscanTx = (hash: string) => `https://tronscan.org/#/transaction/${hash}`
-  const tronscanAddr = (addr: string) => `https://tronscan.org/#/address/${addr}`
+  const etherscanTx = (hash: string) => `https://optimistic.etherscan.io/tx/${hash}`
+  const etherscanAddr = (addr: string) => `https://optimistic.etherscan.io/address/${addr}`
 
   const filteredInvoices = filterStatus
     ? invoices.filter((inv) => inv.status === filterStatus)
@@ -202,7 +202,7 @@ export default function AdminTransactions({ adminToken }: AdminTransactionsProps
                 <p className="text-xs text-slate-400 mb-1">Invoice Wallet</p>
                 <div className="flex items-center justify-between">
                   <a
-                    href={tronscanAddr(invoice.wallet_address)}
+                    href={etherscanAddr(invoice.wallet_address)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-blue-300 font-mono break-all hover:text-blue-200"
@@ -253,13 +253,13 @@ export default function AdminTransactions({ adminToken }: AdminTransactionsProps
                 {invoice.gas_prefund_amount != null && Number(invoice.gas_prefund_amount) > 0 && (
                   <div>
                     <p className="text-slate-400">Gas Prefunded</p>
-                    <p className="text-yellow-300 font-medium">{Number(invoice.gas_prefund_amount).toFixed(2)} TRX</p>
+                    <p className="text-yellow-300 font-medium">{Number(invoice.gas_prefund_amount).toFixed(6)} ETH</p>
                   </div>
                 )}
                 {invoice.gas_prefund_tx_hash && (
                   <div>
                     <p className="text-slate-400">Prefund Tx</p>
-                    <a href={tronscanTx(invoice.gas_prefund_tx_hash)} target="_blank" rel="noopener noreferrer"
+                    <a href={etherscanTx(invoice.gas_prefund_tx_hash)} target="_blank" rel="noopener noreferrer"
                       className="text-yellow-300 hover:text-yellow-200 flex items-center gap-1">
                       {invoice.gas_prefund_tx_hash.slice(0, 10)}... <ExternalLink size={10} />
                     </a>
@@ -268,7 +268,7 @@ export default function AdminTransactions({ adminToken }: AdminTransactionsProps
                 {invoice.commission_tx_hash && (
                   <div>
                     <p className="text-slate-400">Commission Tx</p>
-                    <a href={tronscanTx(invoice.commission_tx_hash)} target="_blank" rel="noopener noreferrer"
+                    <a href={etherscanTx(invoice.commission_tx_hash)} target="_blank" rel="noopener noreferrer"
                       className="text-orange-300 hover:text-orange-200 flex items-center gap-1">
                       {invoice.commission_tx_hash.slice(0, 10)}... <ExternalLink size={10} />
                     </a>
@@ -277,7 +277,7 @@ export default function AdminTransactions({ adminToken }: AdminTransactionsProps
                 {invoice.merchant_tx_hash && (
                   <div>
                     <p className="text-slate-400">Merchant Tx</p>
-                    <a href={tronscanTx(invoice.merchant_tx_hash)} target="_blank" rel="noopener noreferrer"
+                    <a href={etherscanTx(invoice.merchant_tx_hash)} target="_blank" rel="noopener noreferrer"
                       className="text-green-300 hover:text-green-200 flex items-center gap-1">
                       {invoice.merchant_tx_hash.slice(0, 10)}... <ExternalLink size={10} />
                     </a>

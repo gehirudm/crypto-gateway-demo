@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUSDTBalance, getTRXBalance, prefundInvoiceWallet } from '@/lib/tron/wallet'
+import { getUSDTBalance, getETHBalance, prefundInvoiceWallet } from '@/lib/evm/wallet'
 import { checkAndSweepInvoice } from '@/lib/db/invoices'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       updatedStatus = 'received'
       await supabase.from('invoices').update({ status: 'received' }).eq('id', invoiceId)
 
-      // Prefund with TRX for 2 USDT transfers (commission + merchant)
+      // Prefund with ETH for 2 USDT transfers (commission + merchant)
       updatedStatus = 'prefunding'
       await supabase.from('invoices').update({ status: 'prefunding' }).eq('id', invoiceId)
 
@@ -82,9 +82,9 @@ export async function POST(request: NextRequest) {
     // Retry stuck prefunding
     if (invoice.status === 'prefunding') {
       try {
-        const trxBalance = await getTRXBalance(invoice.wallet_address)
+        const ethBalance = await getETHBalance(invoice.wallet_address)
 
-        if (trxBalance > 30) {
+        if (ethBalance > 0.0005) {
           updatedStatus = 'sweeping'
           await supabase.from('invoices').update({ status: 'sweeping' }).eq('id', invoiceId)
 

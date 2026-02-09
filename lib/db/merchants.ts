@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { deriveMerchantWallet, getMasterMnemonic } from '@/lib/tron/wallet'
+import { deriveMerchantWallet, getMasterMnemonic } from '@/lib/evm/wallet'
 
 export interface Merchant {
   id: string
@@ -12,7 +12,7 @@ export interface Merchant {
 }
 
 /**
- * Create a new merchant with a derived TRON wallet
+ * Create a new merchant with a derived EVM wallet
  */
 export async function createMerchant(
   name: string,
@@ -33,7 +33,7 @@ export async function createMerchant(
       ? existingMerchants[0].derivation_index + 1
       : 0
 
-  // Derive wallet at m/44'/195'/1'/0/{nextIndex}
+  // Derive wallet at m/44'/60'/1'/0/{nextIndex}
   const wallet = deriveMerchantWallet(mnemonic, nextIndex)
 
   const { data, error } = await supabase

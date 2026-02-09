@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkAndSweepInvoice } from '@/lib/db/invoices'
-import { getTRXBalance, prefundInvoiceWallet } from '@/lib/tron/wallet'
+import { getETHBalance, prefundInvoiceWallet } from '@/lib/evm/wallet'
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
     for (const invoice of toSweep) {
       try {
         if (['received', 'prefunding'].includes(invoice.status)) {
-          const trxBalance = await getTRXBalance(invoice.wallet_address)
-          if (trxBalance < 30) {
+          const ethBalance = await getETHBalance(invoice.wallet_address)
+          if (ethBalance < 0.0005) {
             const prefundResult = await prefundInvoiceWallet(invoice.wallet_address, 2)
             if (!prefundResult) {
               sweepResults.push({ id: invoice.id, success: false, error: 'Failed to prefund' })

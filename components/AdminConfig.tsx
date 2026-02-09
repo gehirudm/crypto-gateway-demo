@@ -18,7 +18,7 @@ interface MerchantData {
   derived_wallet_address: string
   is_active: boolean
   usdtBalance?: number
-  trxBalance?: number
+  ethBalance?: number
 }
 
 export default function AdminConfig({ adminToken }: AdminConfigProps) {
@@ -121,7 +121,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
         if (previousBalance !== null && currentBalance > previousBalance) {
           setRechargePolling(false)
           setIsRecharging(false)
-          setSuccess(`Gas wallet funded! Balance increased by ${(currentBalance - previousBalance).toFixed(2)} TRX`)
+          setSuccess(`Gas wallet funded! Balance increased by ${(currentBalance - previousBalance).toFixed(6)} ETH`)
           setConfig(data)
           setIsFullyConfigured(data.masterWalletAddress && data.gasWalletFunded)
           setPreviousBalance(null)
@@ -386,11 +386,11 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
         </div>
 
         <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-          <p className="text-sm text-slate-400 mb-2">Gas Wallet (TRX)</p>
+          <p className="text-sm text-slate-400 mb-2">Gas Wallet (ETH)</p>
           <div className={`text-lg font-bold ${gasWalletFunded ? 'text-green-400' : 'text-red-400'}`}>
-            {config?.gasWalletBalance?.toFixed(2) || '0'} TRX
+            {config?.gasWalletBalance?.toFixed(6) || '0'} ETH
           </div>
-          <p className="text-xs text-slate-400 mt-2">{gasWalletFunded ? 'Funded' : 'Needs funding (>10 TRX)'}</p>
+          <p className="text-xs text-slate-400 mt-2">{gasWalletFunded ? 'Funded' : 'Needs funding (>0.001 ETH)'}</p>
         </div>
       </div>
 
@@ -410,8 +410,8 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
               <p className="font-semibold text-yellow-300">Configuration Incomplete</p>
               <p className="text-sm text-yellow-300 mt-1">
                 {!hasMasterWallet && !gasWalletFunded && 'Set master wallet and fund gas wallet'}
-                {!hasMasterWallet && gasWalletFunded && 'Add your master TRON wallet address'}
-                {hasMasterWallet && !gasWalletFunded && 'Send TRX to the gas wallet for energy fees'}
+                {!hasMasterWallet && gasWalletFunded && 'Add your master wallet address'}
+                {hasMasterWallet && !gasWalletFunded && 'Send ETH to the gas wallet for gas fees'}
               </p>
             </div>
           </div>
@@ -419,15 +419,15 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
 
         <form onSubmit={handleSaveConfig} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Master Wallet Address (TRON)</label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Master Wallet Address (Optimism)</label>
             <p className="text-xs text-slate-500 mb-3">
-              Commission fees will be sent to this TRON address
+              Commission fees will be sent to this address on Optimism
             </p>
             <input
               type="text"
               value={masterWalletAddress}
               onChange={(e) => setMasterWalletAddress(e.target.value)}
-              placeholder="T..."
+              placeholder="0x..."
               className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition font-mono text-sm"
             />
           </div>
@@ -474,7 +474,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
       {config?.gasWalletAddress && (
         <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">Gas Wallet (TRX)</h2>
+            <h2 className="text-2xl font-bold text-white">Gas Wallet (ETH)</h2>
             <button
               onClick={fetchConfig}
               disabled={rechargePolling}
@@ -484,8 +484,8 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
             </button>
           </div>
           <p className="text-slate-400 mb-6">
-            This wallet holds TRX for energy fees when processing USDT TRC20 transfers. Ensure it has
-            sufficient TRX balance.
+            This wallet holds ETH for gas fees when processing USDT ERC20 transfers on Optimism. Ensure it has
+            sufficient ETH balance.
           </p>
 
           <div className="space-y-4">
@@ -511,7 +511,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
             <div className="p-4 bg-slate-900/50 rounded-lg">
               <p className="text-xs text-slate-400 mb-2">Current Balance</p>
               <p className="text-2xl font-bold text-blue-400">
-                {config.gasWalletBalance?.toFixed(2) || '0.00'} TRX
+                {config.gasWalletBalance?.toFixed(6) || '0.000000'} ETH
               </p>
               {rechargePolling && previousBalance !== null && (
                 <p className="text-xs text-slate-500 mt-1">
@@ -555,7 +555,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-green-300/70 mb-1">Send TRX to this TRON address:</p>
+                      <p className="text-xs text-green-300/70 mb-1">Send ETH to this Optimism address:</p>
                       <div className="flex items-center gap-2 p-2 bg-slate-900/50 rounded">
                         <code className="text-sm text-green-300 font-mono break-all flex-1">
                           {config.gasWalletAddress}
@@ -573,11 +573,11 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-xs text-green-300/70">
-                      <span>Starting balance: {previousBalance?.toFixed(2)} TRX</span>
-                      <span>Current: {config.gasWalletBalance?.toFixed(2)} TRX</span>
+                      <span>Starting balance: {previousBalance?.toFixed(6)} ETH</span>
+                      <span>Current: {config.gasWalletBalance?.toFixed(6)} ETH</span>
                     </div>
                     <p className="text-xs text-green-300/70">
-                      Polling every 5 seconds to detect your deposit. Min 10 TRX recommended.
+                      Polling every 5 seconds to detect your deposit. Min 0.002 ETH recommended.
                     </p>
                   </div>
                 </div>
@@ -597,17 +597,17 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Amount Swept:</span>
-                    <span className="text-orange-300">{sweepResult.amountSwept?.toFixed(2)} TRX</span>
+                    <span className="text-orange-300">{sweepResult.amountSwept?.toFixed(6)} ETH</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Transaction:</span>
                     <a
-                      href={`https://tronscan.org/#/transaction/${sweepResult.transactionHash}`}
+                      href={`https://optimistic.etherscan.io/tx/${sweepResult.transactionHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-blue-400 hover:text-blue-300 flex items-center gap-1"
                     >
-                      View on TronScan <ExternalLink size={12} />
+                      View on Etherscan <ExternalLink size={12} />
                     </a>
                   </div>
                 </div>
@@ -616,33 +616,33 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
 
             {/* Status Message */}
             <div className={`p-4 rounded-lg ${
-              (config.gasWalletBalance || 0) < 10
+              (config.gasWalletBalance || 0) < 0.001
                 ? 'bg-red-500/10 border border-red-500/30' 
-                : (config.gasWalletBalance || 0) < 50
+                : (config.gasWalletBalance || 0) < 0.005
                 ? 'bg-yellow-500/10 border border-yellow-500/30'
                 : 'bg-green-500/10 border border-green-500/30'
             }`}>
               <p className={`text-xs font-medium mb-1 ${
-                (config.gasWalletBalance || 0) < 10
+                (config.gasWalletBalance || 0) < 0.001
                   ? 'text-red-300' 
-                  : (config.gasWalletBalance || 0) < 50
+                  : (config.gasWalletBalance || 0) < 0.005
                   ? 'text-yellow-300'
                   : 'text-green-300'
               }`}>
-                {(config.gasWalletBalance || 0) < 10
-                  ? '⚠️ Critical: Gas wallet needs TRX for energy fees!'
-                  : (config.gasWalletBalance || 0) < 50
-                  ? '⚠️ Warning: Gas wallet TRX balance is low'
-                  : '✓ Gas wallet has sufficient TRX'}
+                {(config.gasWalletBalance || 0) < 0.001
+                  ? '⚠️ Critical: Gas wallet needs ETH for gas fees!'
+                  : (config.gasWalletBalance || 0) < 0.005
+                  ? '⚠️ Warning: Gas wallet ETH balance is low'
+                  : '✓ Gas wallet has sufficient ETH'}
               </p>
               <p className={`text-xs ${
-                (config.gasWalletBalance || 0) < 50
+                (config.gasWalletBalance || 0) < 0.005
                   ? 'text-yellow-300/70'
                   : 'text-green-300/70'
               }`}>
-                {(config.gasWalletBalance || 0) < 50
-                  ? 'Click "Recharge Gas Wallet" above to add TRX funds.'
-                  : 'System is ready to process USDT TRC20 payments.'}
+                {(config.gasWalletBalance || 0) < 0.005
+                  ? 'Click "Recharge Gas Wallet" above to add ETH funds.'
+                  : 'System is ready to process USDT ERC20 payments on Optimism.'}
               </p>
             </div>
           </div>
@@ -662,7 +662,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
           </button>
         </div>
         <p className="text-slate-400 mb-6">
-          Manage merchants. Each merchant gets a derived TRON wallet. Invoice funds are split between 
+          Manage merchants. Each merchant gets a derived Optimism wallet. Invoice funds are split between 
           commission (master wallet) and merchant (derived wallet).
         </p>
 
@@ -681,7 +681,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
               type="text"
               value={newMerchantWallet}
               onChange={(e) => setNewMerchantWallet(e.target.value)}
-              placeholder="External sweep address (optional, TRON address)"
+              placeholder="External sweep address (optional, 0x... address)"
               className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-blue-500 outline-none transition text-sm font-mono"
             />
             <button
@@ -728,7 +728,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
                       type="text"
                       value={editMerchantWallet}
                       onChange={(e) => setEditMerchantWallet(e.target.value)}
-                      placeholder="External sweep address (TRON)"
+                      placeholder="External sweep address (0x...)"
                       className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm font-mono"
                     />
                     <div className="flex gap-2">
@@ -801,7 +801,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
                           USDT: <span className="text-green-400 font-medium">{(merchant.usdtBalance ?? 0).toFixed(2)}</span>
                         </span>
                         <span className="text-slate-400">
-                          TRX: <span className="text-blue-400 font-medium">{(merchant.trxBalance ?? 0).toFixed(2)}</span>
+                          ETH: <span className="text-blue-400 font-medium">{(merchant.ethBalance ?? 0).toFixed(6)}</span>
                         </span>
                       </div>
                       {(merchant.usdtBalance ?? 0) > 0 && merchant.external_wallet_address && (
@@ -833,14 +833,14 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
 
         <div className="space-y-4">
           <div className="flex items-center justify-between py-3 border-b border-slate-700">
-            <span className="text-slate-300">1. Master Wallet (TRON)</span>
+            <span className="text-slate-300">1. Master Wallet (Optimism)</span>
             <span className={`font-medium ${hasMasterWallet ? 'text-green-400' : 'text-slate-400'}`}>
               {hasMasterWallet ? '✓ Complete' : '⏳ Pending'}
             </span>
           </div>
 
           <div className="flex items-center justify-between py-3 border-b border-slate-700">
-            <span className="text-slate-300">2. Gas Wallet Funded (TRX)</span>
+            <span className="text-slate-300">2. Gas Wallet Funded (ETH)</span>
             <span className={`font-medium ${gasWalletFunded ? 'text-green-400' : 'text-slate-400'}`}>
               {gasWalletFunded ? '✓ Complete' : '⏳ Pending'}
             </span>
@@ -854,7 +854,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
           </div>
 
           <div className="flex items-center justify-between py-3 border-b border-slate-700">
-            <span className="text-slate-300">TRON Mnemonic</span>
+            <span className="text-slate-300">Mnemonic</span>
             <span className="text-green-400 font-medium">✓ Environment Variable</span>
           </div>
 
@@ -869,7 +869,7 @@ export default function AdminConfig({ adminToken }: AdminConfigProps) {
         {isFullyConfigured && merchants.length > 0 && (
           <div className="mt-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
             <p className="text-green-400 text-sm font-medium">
-              System is fully configured and ready to accept USDT (TRC20) payments on TRON!
+              System is fully configured and ready to accept USDT (ERC20) payments on Optimism!
             </p>
           </div>
         )}

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { deriveInvoiceWallet, getUSDTBalance, getMasterMnemonic } from '@/lib/tron/wallet'
+import { deriveInvoiceWallet, getUSDTBalance, getMasterMnemonic } from '@/lib/evm/wallet'
 import { createInvoice } from '@/lib/db/invoices'
 import { NextRequest, NextResponse } from 'next/server'
 

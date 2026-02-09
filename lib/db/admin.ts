@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { deriveInvoiceWallet } from '@/lib/tron/wallet'
+import { deriveInvoiceWallet } from '@/lib/evm/wallet'
 
 export interface AdminConfig {
   id: string
@@ -29,9 +29,9 @@ export async function getAdminConfig(): Promise<AdminConfig | null> {
  * Get or create gas wallet address (derived at index 0)
  */
 export async function getOrCreateGasWallet(): Promise<string> {
-  const mnemonic = process.env.TRON_MASTER_MNEMONIC
+  const mnemonic = process.env.MASTER_MNEMONIC
   if (!mnemonic) {
-    throw new Error('TRON_MASTER_MNEMONIC not configured')
+    throw new Error('MASTER_MNEMONIC not configured')
   }
 
   const gasWallet = deriveInvoiceWallet(mnemonic, 0)
