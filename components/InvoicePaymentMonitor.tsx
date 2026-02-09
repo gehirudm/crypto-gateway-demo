@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Copy, Check, ArrowLeft, Zap, Clock, AlertCircle } from 'lucide-react'
+import { Copy, Check, ArrowLeft, Clock } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 
 interface Invoice {
@@ -12,6 +12,7 @@ interface Invoice {
   balance: number
   status: string
   createdAt: string
+  merchantName?: string
 }
 
 interface InvoicePaymentMonitorProps {
@@ -23,7 +24,6 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
   const [copied, setCopied] = useState(false)
   const [pollStatus, setPollStatus] = useState<any>(null)
   const [isPolling, setIsPolling] = useState(true)
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null)
   const [statusHistory, setStatusHistory] = useState<string[]>([invoice.status])
   const [lastUpdate, setLastUpdate] = useState(new Date())
 
@@ -46,12 +46,10 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
         setPollStatus(data.invoice)
         setLastUpdate(new Date())
 
-        // Track status changes
         if (data.invoice.status !== statusHistory[statusHistory.length - 1]) {
           setStatusHistory([...statusHistory, data.invoice.status])
         }
 
-        // Stop polling if completed
         if (data.invoice.status === 'completed') {
           setIsPolling(false)
         }
@@ -63,52 +61,35 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
 
   useEffect(() => {
     if (isPolling) {
-      // Initial poll
       pollInvoiceStatus()
-
-      // Set up interval
-      const interval = setInterval(pollInvoiceStatus, 2000) // Poll every 2 seconds
-      setPollInterval(interval)
-
+      const interval = setInterval(pollInvoiceStatus, 3000)
       return () => clearInterval(interval)
     }
   }, [isPolling])
 
   const currentStatus = pollStatus || invoice
   const progress = currentStatus.balance / invoice.amount
-  const timeLeft = Math.max(0, 600 - Math.floor((Date.now() - new Date(invoice.createdAt).getTime()) / 1000)) // 10 min timeout
+  const timeLeft = Math.max(0, 1800 - Math.floor((Date.now() - new Date(invoice.createdAt).getTime()) / 1000))
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed':
-        return 'text-green-400'
-      case 'sweeping':
-        return 'text-purple-400'
-      case 'prefunding':
-        return 'text-yellow-400'
-      case 'received':
-        return 'text-blue-400'
-      case 'pending':
-        return 'text-slate-400'
-      default:
-        return 'text-slate-400'
+      case 'completed': return 'text-green-400'
+      case 'sweeping': return 'text-purple-400'
+      case 'prefunding': return 'text-yellow-400'
+      case 'received': return 'text-blue-400'
+      case 'pending': return 'text-slate-400'
+      default: return 'text-slate-400'
     }
   }
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'completed':
-        return '✓ Completed'
-      case 'sweeping':
-        return '⚡ Sweeping Funds'
-      case 'prefunding':
-        return '⛽ Prefunding Gas'
-      case 'received':
-        return '💰 Payment Received'
-      case 'pending':
-        return '⏳ Waiting for Payment'
-      default:
-        return status
+      case 'completed': return '✓ Completed'
+      case 'sweeping': return '⚡ Sweeping Funds'
+      case 'prefunding': return '⛽ Prefunding TRX for Gas'
+      case 'received': return '💰 Payment Received'
+      case 'pending': return '⏳ Waiting for Payment'
+      default: return status
     }
   }
 
@@ -136,6 +117,9 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
           <div className={`text-3xl font-bold mb-4 ${getStatusColor(currentStatus.status)}`}>
             {getStatusLabel(currentStatus.status)}
           </div>
+          {invoice.merchantName && (
+            <p className="text-sm text-blue-400">Merchant: {invoice.merchantName}</p>
+          )}
         </div>
 
         {/* Progress Bar */}
@@ -143,7 +127,7 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-slate-300">Payment Progress</span>
             <span className="text-sm font-mono text-slate-300">
-              {currentStatus.balance.toFixed(6)} / {invoice.amount.toFixed(6)} {invoice.currency}
+              {currentStatus.balance.toFixed(2)} / {invoice.amount.toFixed(2)} USDT
             </span>
           </div>
           <div className="w-full h-3 bg-slate-700 rounded-full overflow-hidden">
@@ -156,15 +140,6 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
             {Math.round(progress * 100)}% of required amount received
           </p>
         </div>
-
-        {/* Confirmation Status */}
-        {currentStatus.isPaymentReceived && currentStatus.confirmationCount !== undefined && (
-          <div className="mb-8 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-            <p className="text-sm text-blue-300">
-              ✓ Transaction Confirmation Count: {currentStatus.confirmationCount}
-            </p>
-          </div>
-        )}
 
         {/* Time Remaining */}
         {timeLeft > 0 && currentStatus.status === 'pending' && (
@@ -196,7 +171,7 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
             </div>
 
             <div className="p-4 bg-slate-900/50 rounded-lg">
-              <p className="text-xs text-slate-400 mb-2">Send {invoice.currency} to:</p>
+              <p className="text-xs text-slate-400 mb-2">Send USDT (TRC20) to:</p>
               <div className="flex items-center justify-between">
                 <code className="text-sm text-blue-300 font-mono break-all">{invoice.walletAddress}</code>
                 <button
@@ -211,27 +186,18 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
             <div className="p-4 bg-slate-900/50 rounded-lg">
               <p className="text-xs text-slate-400 mb-2">Amount Required:</p>
               <p className="text-xl font-bold text-white">
-                {invoice.amount.toFixed(6)} {invoice.currency}
+                {invoice.amount.toFixed(2)} USDT
               </p>
             </div>
 
-            {invoice.currency === 'USDC' && (
-              <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p className="text-xs text-blue-300 font-medium mb-1">⚠️ Important for USDC:</p>
-                <p className="text-xs text-blue-300">
-                  Gas fees will be automatically prefunded once payment is detected. You only need to send the USDC amount.
-                </p>
-              </div>
-            )}
-
-            {invoice.currency === 'ETH' && (
-              <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                <p className="text-xs text-green-300 font-medium mb-1">✓ ETH Payment:</p>
-                <p className="text-xs text-green-300">
-                  Include sufficient gas fees in your transaction. The payment will be swept automatically once confirmed.
-                </p>
-              </div>
-            )}
+            <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <p className="text-xs text-blue-300 font-medium mb-1">⚠️ Important:</p>
+              <p className="text-xs text-blue-300">
+                Send <strong>USDT (TRC20)</strong> on the <strong>TRON network</strong> only. 
+                Do not send tokens on other networks (ERC20, BEP20, etc.) — they will be lost.
+                Gas fees (TRX) are handled automatically after payment is detected.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -261,7 +227,7 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
             <div className="text-4xl mb-4">🎉</div>
             <h2 className="text-2xl font-bold text-green-400 mb-2">Payment Completed!</h2>
             <p className="text-slate-300">
-              Your {invoice.currency} payment has been successfully received and swept to the master wallet.
+              Your USDT payment has been successfully received and processed.
             </p>
             <button
               onClick={onBack}
@@ -278,8 +244,9 @@ export default function InvoicePaymentMonitor({ invoice, onBack }: InvoicePaymen
         <p className="text-xs text-slate-500 mb-2">Debug Info</p>
         <div className="text-xs font-mono text-slate-500 space-y-1">
           <p>Last Updated: {lastUpdate.toLocaleTimeString()}</p>
-          <p>Polling: {isPolling ? 'Active' : 'Stopped'}</p>
-          <p>Network: Optimism</p>
+          <p>Polling: {isPolling ? 'Active (every 3s)' : 'Stopped'}</p>
+          <p>Network: TRON Mainnet</p>
+          <p>Token: USDT TRC20</p>
         </div>
       </div>
     </div>

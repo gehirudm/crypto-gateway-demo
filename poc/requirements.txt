@@ -1,14 +1,15 @@
-# Web3 and Ethereum libraries
-web3==6.15.1
-eth-account==0.10.0
+# TRON blockchain library
+tronpy>=0.4.0
 
-# Supabase client (using compatible versions)
-supabase==2.9.0
-httpx==0.27.0
-websockets==13.1
+# BIP39 mnemonic support
+mnemonic>=0.21
+
+# Supabase client
+supabase>=2.9.0
+httpx>=0.27.0
 
 # Environment variables
-python-dotenv==1.0.1
+python-dotenv>=1.0.1
 
 # Optional: For better console output
-rich==13.7.0
+rich>=13.7.0

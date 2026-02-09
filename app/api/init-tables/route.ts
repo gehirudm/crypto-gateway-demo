@@ -4,53 +4,95 @@ export async function POST(request: Request) {
   try {
     const supabase = await createClient()
 
-    // Create admin_config table
-    const { data: adminConfigData, error: adminConfigError } = await supabase.from('admin_config').select('*').limit(1)
+    // Verify admin_config table exists by attempting a select
+    const { error: adminConfigError } = await supabase.from('admin_config').select('*').limit(1)
 
     if (adminConfigError && adminConfigError.code === 'PGRST116') {
-      // Table doesn't exist, we need to create it
-      // Since we can't execute raw SQL directly, we'll use a different approach
-      console.log('[v0] Creating admin_config table via insert...')
+      console.log('[INIT] admin_config table not found. Please create it in Supabase Dashboard.')
+      console.log(`
+        CREATE TABLE admin_config (
+          id TEXT PRIMARY KEY DEFAULT 'default',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          master_wallet_address TEXT NOT NULL DEFAULT '',
+          gas_wallet_address TEXT NOT NULL DEFAULT '',
+          commission_rate NUMERIC DEFAULT 5.0
+        );
+      `)
+    } else {
+      // Ensure a default row exists
+      const { data: existing } = await supabase
+        .from('admin_config')
+        .select('id')
+        .eq('id', 'default')
+        .single()
 
-      // Try to insert a default row - if table doesn't exist, it will create one
-      const { error: insertError } = await supabase.from('admin_config').insert({
-        id: 'default',
-        master_wallet_address: '',
-        gas_wallet_address: '',
-      })
-
-      if (insertError && insertError.code !== 'PGRST116') {
-        throw insertError
+      if (!existing) {
+        await supabase.from('admin_config').insert({
+          id: 'default',
+          master_wallet_address: '',
+          gas_wallet_address: '',
+          commission_rate: 5.0,
+        })
       }
     }
 
-    // Create invoices table
-    const { data: invoicesData, error: invoicesError } = await supabase.from('invoices').select('*').limit(1)
+    // Verify merchants table
+    const { error: merchantsError } = await supabase.from('merchants').select('*').limit(1)
+
+    if (merchantsError && merchantsError.code === 'PGRST116') {
+      console.log('[INIT] merchants table not found. Please create it in Supabase Dashboard.')
+      console.log(`
+        CREATE TABLE merchants (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          name TEXT NOT NULL,
+          external_wallet_address TEXT DEFAULT '',
+          derivation_index INTEGER NOT NULL UNIQUE,
+          derived_wallet_address TEXT NOT NULL,
+          is_active BOOLEAN DEFAULT true
+        );
+      `)
+    }
+
+    // Verify invoices table
+    const { error: invoicesError } = await supabase.from('invoices').select('*').limit(1)
 
     if (invoicesError && invoicesError.code === 'PGRST116') {
-      console.log('[v0] Creating invoices table via insert...')
-
-      // Insert a dummy row to create the table structure
-      const { error: dummyError } = await supabase.from('invoices').insert({
-        currency: 'ETH',
-        amount_expected: 0,
-        wallet_address: '0x0000000000000000000000000000000000000000',
-        derivation_index: -1,
-        status: 'pending',
-        current_balance: 0,
-        confirmation_count: 0,
-      })
-
-      // Delete the dummy row
-      if (!dummyError) {
-        await supabase.from('invoices').delete().eq('derivation_index', -1)
-      }
+      console.log('[INIT] invoices table not found. Please create it in Supabase Dashboard.')
+      console.log(`
+        CREATE TABLE invoices (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          merchant_id UUID NOT NULL REFERENCES merchants(id),
+          amount_expected NUMERIC NOT NULL,
+          wallet_address TEXT NOT NULL,
+          derivation_index INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','received','prefunding','sweeping','completed','failed')),
+          current_balance NUMERIC DEFAULT 0,
+          confirmation_count INTEGER DEFAULT 0,
+          last_checked_at TIMESTAMPTZ,
+          sweep_tx_hash TEXT,
+          commission_tx_hash TEXT,
+          merchant_tx_hash TEXT,
+          gas_prefund_amount NUMERIC,
+          gas_prefund_tx_hash TEXT,
+          commission_amount NUMERIC,
+          merchant_amount NUMERIC
+        );
+      `)
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Database tables initialized successfully',
+        message: 'Database tables checked. Review server logs if tables need creation.',
+        schema: {
+          admin_config: !adminConfigError ? 'OK' : 'MISSING',
+          merchants: !merchantsError ? 'OK' : 'MISSING',
+          invoices: !invoicesError ? 'OK' : 'MISSING',
+        },
       }),
       {
         status: 200,
@@ -58,7 +100,7 @@ export async function POST(request: Request) {
       }
     )
   } catch (error) {
-    console.error('[v0] Database initialization error:', error)
+    console.error('[INIT] Database initialization error:', error)
     return new Response(
       JSON.stringify({
         error: 'Database initialization failed',

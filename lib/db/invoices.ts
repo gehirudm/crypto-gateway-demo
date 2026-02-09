@@ -1,27 +1,31 @@
 import { createClient } from '@/lib/supabase/server'
-import { sendTransaction, deriveWalletFromMnemonic, sweepETH } from '@/lib/web3/wallet'
+import { deriveInvoiceWallet, sendUSDT, getUSDTBalance, getMasterMnemonic } from '@/lib/tron/wallet'
 
 export interface Invoice {
   id: string
   created_at: string
-  currency: 'ETH' | 'USDC'
+  merchant_id: string
   amount_expected: number
   wallet_address: string
   derivation_index: number
-  status: 'pending' | 'received' | 'prefunding' | 'sweeping' | 'completed'
+  status: 'pending' | 'received' | 'prefunding' | 'sweeping' | 'completed' | 'failed'
   current_balance: number
   confirmation_count: number
   last_checked_at: string
   sweep_tx_hash?: string
+  commission_tx_hash?: string
+  merchant_tx_hash?: string
   gas_prefund_amount?: number
   gas_prefund_tx_hash?: string
+  commission_amount?: number
+  merchant_amount?: number
 }
 
 /**
- * Create a new invoice with wallet
+ * Create a new invoice with derived TRON wallet
  */
 export async function createInvoice(params: {
-  currency: 'ETH' | 'USDC'
+  merchantId: string
   amount: number
   walletAddress: string
   derivationIndex: number
@@ -30,18 +34,16 @@ export async function createInvoice(params: {
 
   const { data, error } = await supabase
     .from('invoices')
-    .insert([
-      {
-        currency: params.currency,
-        amount_expected: params.amount,
-        wallet_address: params.walletAddress,
-        derivation_index: params.derivationIndex,
-        status: 'pending',
-        current_balance: 0,
-        confirmation_count: 0,
-        last_checked_at: new Date().toISOString(),
-      },
-    ])
+    .insert({
+      merchant_id: params.merchantId,
+      amount_expected: params.amount,
+      wallet_address: params.walletAddress,
+      derivation_index: params.derivationIndex,
+      status: 'pending',
+      current_balance: 0,
+      confirmation_count: 0,
+      last_checked_at: new Date().toISOString(),
+    })
     .select()
     .single()
 
@@ -71,7 +73,10 @@ export async function getInvoice(invoiceId: string): Promise<Invoice | null> {
 /**
  * Update invoice status
  */
-export async function updateInvoiceStatus(invoiceId: string, status: Invoice['status']): Promise<Invoice | null> {
+export async function updateInvoiceStatus(
+  invoiceId: string,
+  status: Invoice['status']
+): Promise<Invoice | null> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -90,76 +95,117 @@ export async function updateInvoiceStatus(invoiceId: string, status: Invoice['st
 }
 
 /**
- * Sweep invoice funds to master wallet
+ * Sweep invoice USDT: commission to master wallet, remainder to merchant's derived wallet
  */
-export async function checkAndSweepInvoice(invoiceId: string): Promise<{ swept: boolean; txHash?: string }> {
+export async function checkAndSweepInvoice(invoiceId: string): Promise<{
+  swept: boolean
+  commissionTxHash?: string
+  merchantTxHash?: string
+}> {
   try {
     const supabase = await createClient()
-
-    // Get invoice
     const invoice = await getInvoice(invoiceId)
+
     if (!invoice) {
       throw new Error('Invoice not found')
     }
 
-    // Get master mnemonic
-    const masterMnemonic = process.env.MASTER_MNEMONIC
-    if (!masterMnemonic) {
-      throw new Error('Master mnemonic not configured')
-    }
+    const mnemonic = getMasterMnemonic()
 
-    // Get admin config to get master wallet address
-    const { data: config } = await supabase.from('admin_config').select('*').eq('id', 'default').single()
+    // Get admin config for master wallet and commission rate
+    const { data: config } = await supabase
+      .from('admin_config')
+      .select('*')
+      .eq('id', 'default')
+      .single()
 
-    if (!config || !config.master_wallet_address) {
+    if (!config?.master_wallet_address) {
       throw new Error('Master wallet not configured')
     }
 
-    // Derive the wallet for this invoice
-    const invoiceWallet = deriveWalletFromMnemonic(masterMnemonic, invoice.derivation_index)
+    // Get merchant's derived wallet
+    const { data: merchant } = await supabase
+      .from('merchants')
+      .select('*')
+      .eq('id', invoice.merchant_id)
+      .single()
 
-    let txHash: string
-
-    if (invoice.currency === 'ETH') {
-      // For ETH, use sweepETH which properly accounts for gas fees
-      const sweepResult = await sweepETH(invoiceWallet.privateKey, config.master_wallet_address)
-      
-      if (!sweepResult) {
-        throw new Error('Failed to sweep ETH - balance may be too low to cover gas')
-      }
-      
-      txHash = sweepResult.hash
-    } else {
-      // For USDC, use regular sendTransaction (gas is prefunded separately)
-      const txResult = await sendTransaction(
-        invoiceWallet.privateKey,
-        config.master_wallet_address,
-        invoice.current_balance.toString(),
-        invoice.currency,
-        process.env.NEXT_PUBLIC_USDC_CONTRACT_ADDRESS
-      )
-
-      if (!txResult) {
-        throw new Error('Failed to send transaction')
-      }
-
-      // Wait for confirmation
-      await txResult.wait()
-      
-      txHash = txResult.hash
+    if (!merchant) {
+      throw new Error('Merchant not found')
     }
 
-    // Update invoice with sweep tx hash
+    // Derive invoice wallet private key
+    const invoiceWallet = deriveInvoiceWallet(mnemonic, invoice.derivation_index)
+
+    // Get actual USDT balance in invoice wallet
+    const usdtBalance = await getUSDTBalance(invoice.wallet_address)
+
+    if (usdtBalance <= 0) {
+      throw new Error('No USDT balance in invoice wallet')
+    }
+
+    // Calculate commission and merchant amounts
+    const commissionRate = Number(config.commission_rate) / 100
+    const commissionAmount = Math.floor(usdtBalance * commissionRate * 1_000_000) / 1_000_000
+    const merchantAmount = Math.floor((usdtBalance - commissionAmount) * 1_000_000) / 1_000_000
+
+    let commissionTxHash: string | undefined
+    let merchantTxHash: string | undefined
+
+    // Send commission to master wallet (if > 0)
+    if (commissionAmount > 0.001) {
+      console.log(
+        `[SWEEP] Sending ${commissionAmount} USDT commission to master: ${config.master_wallet_address}`
+      )
+      const commissionResult = await sendUSDT(
+        invoiceWallet.privateKey,
+        config.master_wallet_address,
+        commissionAmount
+      )
+
+      if (!commissionResult) {
+        throw new Error('Failed to send commission to master wallet')
+      }
+
+      commissionTxHash = commissionResult.txid
+
+      // Wait for confirmation before next transfer
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+    }
+
+    // Send remainder to merchant's derived wallet
+    if (merchantAmount > 0.001) {
+      console.log(
+        `[SWEEP] Sending ${merchantAmount} USDT to merchant wallet: ${merchant.derived_wallet_address}`
+      )
+      const merchantResult = await sendUSDT(
+        invoiceWallet.privateKey,
+        merchant.derived_wallet_address,
+        merchantAmount
+      )
+
+      if (!merchantResult) {
+        throw new Error('Failed to send funds to merchant wallet')
+      }
+
+      merchantTxHash = merchantResult.txid
+    }
+
+    // Update invoice with results
     await supabase
       .from('invoices')
       .update({
         status: 'completed',
-        sweep_tx_hash: txHash,
+        sweep_tx_hash: commissionTxHash || merchantTxHash,
+        commission_tx_hash: commissionTxHash,
+        merchant_tx_hash: merchantTxHash,
+        commission_amount: commissionAmount,
+        merchant_amount: merchantAmount,
         last_checked_at: new Date().toISOString(),
       })
       .eq('id', invoiceId)
 
-    return { swept: true, txHash }
+    return { swept: true, commissionTxHash, merchantTxHash }
   } catch (error) {
     console.error('Error sweeping invoice:', error)
     return { swept: false }

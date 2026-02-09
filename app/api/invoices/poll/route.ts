@@ -1,211 +1,137 @@
 import { createClient } from '@/lib/supabase/server'
-import { getWalletBalance, getTransactionCount, prefundInvoiceWallet } from '@/lib/web3/wallet'
+import { getUSDTBalance, getTRXBalance, prefundInvoiceWallet } from '@/lib/tron/wallet'
 import { checkAndSweepInvoice } from '@/lib/db/invoices'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[API:POLL:INVOICE] Starting invoice poll')
-    
     const body = await request.json()
-    console.log('[API:POLL:INVOICE] Request body:', body)
-    
     const { invoiceId } = body
 
     if (!invoiceId) {
-      console.error('[API:POLL:INVOICE] Missing invoice ID')
       return NextResponse.json({ error: 'Missing invoice ID' }, { status: 400 })
     }
 
-    console.log('[API:POLL:INVOICE] Fetching invoice:', invoiceId)
     const supabase = await createClient()
 
-    // Fetch invoice
     const { data: invoice, error } = await supabase
       .from('invoices')
       .select('*')
       .eq('id', invoiceId)
       .single()
 
-    if (error) {
-      console.error('[API:POLL:INVOICE] Database error fetching invoice:', error)
-    }
-
     if (error || !invoice) {
-      console.error('[API:POLL:INVOICE] Invoice not found - ID:', invoiceId)
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    console.log('[API:POLL:INVOICE] Invoice found:', {
-      currency: invoice.currency,
-      walletAddress: invoice.wallet_address,
-      expectedAmount: invoice.amount_expected,
-      status: invoice.status,
-    })
-
-    // Get current wallet balance
-    console.log('[API:POLL:INVOICE] Fetching wallet balance for:', invoice.wallet_address)
-    const balance = await getWalletBalance(invoice.wallet_address, invoice.currency)
+    // Get current USDT balance
+    const balance = await getUSDTBalance(invoice.wallet_address)
     const requiredAmount = invoice.amount_expected
-    console.log('[API:POLL:INVOICE] Current balance:', balance, 'Required:', requiredAmount)
-
-    // Check transaction count for confirmation status
-    console.log('[API:POLL:INVOICE] Getting transaction count')
-    const txCount = await getTransactionCount(invoice.wallet_address)
-    console.log('[API:POLL:INVOICE] Transaction count:', txCount)
 
     // Update balance in database
-    console.log('[API:POLL:INVOICE] Updating invoice balance and confirmation count')
-    const updateResult = await supabase
+    await supabase
       .from('invoices')
       .update({
         current_balance: balance,
         last_checked_at: new Date().toISOString(),
-        confirmation_count: txCount,
       })
       .eq('id', invoiceId)
-    
-    if (updateResult.error) {
-      console.error('[API:POLL:INVOICE] Error updating invoice:', updateResult.error)
-    }
 
     let updatedStatus = invoice.status
 
-    // Check if payment received
+    // Payment received - start prefund + sweep flow
     if (balance >= requiredAmount && invoice.status === 'pending') {
-      console.log('[API:POLL:INVOICE] Payment received! Updating status')
-      // Payment received, initiate sweep
       updatedStatus = 'received'
-      
-      // Update status
       await supabase.from('invoices').update({ status: 'received' }).eq('id', invoiceId)
 
-      // If this is USDC, we need to prefund with gas first
-      if (invoice.currency === 'USDC') {
-        console.log('[API:POLL:INVOICE] USDC detected, prefunding invoice wallet with gas')
-        updatedStatus = 'prefunding'
-        await supabase.from('invoices').update({ status: 'prefunding' }).eq('id', invoiceId)
-        
-        // Actually prefund the invoice wallet with ETH for gas
-        try {
-          const prefundResult = await prefundInvoiceWallet(invoice.wallet_address)
-          if (prefundResult) {
-            console.log('[API:POLL:INVOICE] Prefunding successful, TX:', prefundResult.hash, 'Amount:', prefundResult.amountSent, 'ETH')
-            
-            // Record gas prefund amount and tx hash
-            await supabase.from('invoices').update({
-              gas_prefund_amount: parseFloat(prefundResult.amountSent),
-              gas_prefund_tx_hash: prefundResult.hash,
-            }).eq('id', invoiceId)
+      // Prefund with TRX for 2 USDT transfers (commission + merchant)
+      updatedStatus = 'prefunding'
+      await supabase.from('invoices').update({ status: 'prefunding' }).eq('id', invoiceId)
 
-            // Now sweep the USDC
-            updatedStatus = 'sweeping'
-            await supabase.from('invoices').update({ status: 'sweeping' }).eq('id', invoiceId)
-            
-            const result = await checkAndSweepInvoice(invoiceId)
-            if (result.swept) {
-              console.log('[API:POLL:INVOICE] USDC sweep successful, TX:', result.txHash)
-              updatedStatus = 'completed'
-            } else {
-              console.log('[API:POLL:INVOICE] USDC sweep failed after prefunding')
-            }
-          } else {
-            console.error('[API:POLL:INVOICE] Failed to prefund invoice wallet - gas wallet may have insufficient balance')
-          }
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err)
-          console.error('[API:POLL:INVOICE] Error in USDC prefund/sweep flow:', errorMsg)
-        }
-      } else {
-        // For ETH, we can sweep directly
-        console.log('[API:POLL:INVOICE] ETH detected, initiating sweep')
-        updatedStatus = 'sweeping'
-        await supabase.from('invoices').update({ status: 'sweeping' }).eq('id', invoiceId)
-        
-        // Attempt sweep
-        try {
-          console.log('[API:POLL:INVOICE] Attempting to sweep invoice')
-          const result = await checkAndSweepInvoice(invoiceId)
-          if (result.swept) {
-            console.log('[API:POLL:INVOICE] Sweep successful, TX:', result.txHash)
-            updatedStatus = 'completed'
-          } else {
-            console.log('[API:POLL:INVOICE] Sweep failed')
-          }
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err)
-          console.error('[API:POLL:INVOICE] Error sweeping invoice:', errorMsg)
-        }
-      }
-    }
-
-    // Handle invoices stuck in prefunding status (retry on next poll)
-    if (invoice.status === 'prefunding') {
-      console.log('[API:POLL:INVOICE] Invoice stuck in prefunding, retrying prefund + sweep')
       try {
-        // Check if wallet already has ETH (might have been prefunded already)
-        const ethBalance = await getWalletBalance(invoice.wallet_address, 'ETH')
-        
-        if (ethBalance > 0) {
-          console.log('[API:POLL:INVOICE] Invoice wallet already has ETH, proceeding to sweep')
+        const prefundResult = await prefundInvoiceWallet(invoice.wallet_address, 2)
+
+        if (prefundResult) {
+          await supabase
+            .from('invoices')
+            .update({
+              gas_prefund_amount: prefundResult.amountSent,
+              gas_prefund_tx_hash: prefundResult.txid,
+            })
+            .eq('id', invoiceId)
+
+          // Wait for TRX confirmation
+          await new Promise((resolve) => setTimeout(resolve, 5000))
+
+          // Sweep USDT with commission split
           updatedStatus = 'sweeping'
           await supabase.from('invoices').update({ status: 'sweeping' }).eq('id', invoiceId)
-          
+
           const result = await checkAndSweepInvoice(invoiceId)
           if (result.swept) {
-            console.log('[API:POLL:INVOICE] USDC sweep successful on retry, TX:', result.txHash)
             updatedStatus = 'completed'
           }
         } else {
-          // Retry prefunding
-          const prefundResult = await prefundInvoiceWallet(invoice.wallet_address)
+          console.error('[POLL] Failed to prefund invoice wallet')
+        }
+      } catch (err) {
+        console.error('[POLL] Error in prefund/sweep flow:', err)
+      }
+    }
+
+    // Retry stuck prefunding
+    if (invoice.status === 'prefunding') {
+      try {
+        const trxBalance = await getTRXBalance(invoice.wallet_address)
+
+        if (trxBalance > 30) {
+          updatedStatus = 'sweeping'
+          await supabase.from('invoices').update({ status: 'sweeping' }).eq('id', invoiceId)
+
+          const result = await checkAndSweepInvoice(invoiceId)
+          if (result.swept) updatedStatus = 'completed'
+        } else {
+          const prefundResult = await prefundInvoiceWallet(invoice.wallet_address, 2)
           if (prefundResult) {
-            // Record gas prefund amount and tx hash
-            await supabase.from('invoices').update({
-              gas_prefund_amount: parseFloat(prefundResult.amountSent),
-              gas_prefund_tx_hash: prefundResult.hash,
-            }).eq('id', invoiceId)
+            await supabase
+              .from('invoices')
+              .update({
+                gas_prefund_amount: prefundResult.amountSent,
+                gas_prefund_tx_hash: prefundResult.txid,
+              })
+              .eq('id', invoiceId)
+
+            await new Promise((resolve) => setTimeout(resolve, 5000))
 
             updatedStatus = 'sweeping'
             await supabase.from('invoices').update({ status: 'sweeping' }).eq('id', invoiceId)
-            
+
             const result = await checkAndSweepInvoice(invoiceId)
-            if (result.swept) {
-              console.log('[API:POLL:INVOICE] USDC sweep successful on retry, TX:', result.txHash)
-              updatedStatus = 'completed'
-            }
+            if (result.swept) updatedStatus = 'completed'
           }
         }
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err)
-        console.error('[API:POLL:INVOICE] Error retrying USDC prefund/sweep:', errorMsg)
+        console.error('[POLL] Error retrying prefund:', err)
       }
     }
 
-    // Handle invoices stuck in sweeping status (retry on next poll)
+    // Retry stuck sweeping
     if (invoice.status === 'sweeping') {
-      console.log('[API:POLL:INVOICE] Invoice stuck in sweeping, retrying sweep')
       try {
         const result = await checkAndSweepInvoice(invoiceId)
-        if (result.swept) {
-          console.log('[API:POLL:INVOICE] Sweep successful on retry, TX:', result.txHash)
-          updatedStatus = 'completed'
-        }
+        if (result.swept) updatedStatus = 'completed'
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err)
-        console.error('[API:POLL:INVOICE] Error retrying sweep:', errorMsg)
+        console.error('[POLL] Error retrying sweep:', err)
       }
     }
 
-    // Fetch updated invoice
-    console.log('[API:POLL:INVOICE] Fetching updated invoice data')
+    // Fetch final state
     const { data: updatedInvoice } = await supabase
       .from('invoices')
       .select('*')
       .eq('id', invoiceId)
       .single()
 
-    console.log('[API:POLL:INVOICE] Returning success response - status:', updatedInvoice?.status)
     return NextResponse.json({
       success: true,
       invoice: {
@@ -213,19 +139,15 @@ export async function POST(request: NextRequest) {
         status: updatedInvoice.status,
         balance,
         requiredAmount,
-        confirmationCount: txCount,
         isPaymentReceived: balance >= requiredAmount,
         lastChecked: updatedInvoice.last_checked_at,
       },
     })
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    console.error('[API:POLL:INVOICE] ERROR:', errorMsg)
-    console.error('[API:POLL:INVOICE] Full error:', error)
-    console.error('[API:POLL:INVOICE] Stack trace:', error instanceof Error ? error.stack : 'N/A')
-    return NextResponse.json({ 
-      error: 'Failed to poll invoice',
-      details: errorMsg 
-    }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to poll invoice', details: errorMsg },
+      { status: 500 }
+    )
   }
 }

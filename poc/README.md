@@ -1,6 +1,6 @@
-# Invoice Recovery Tool
+# TRON USDT Recovery & Sweep Tool
 
-Emergency recovery tool to manually sweep funds from invoice wallets in case the automatic system fails.
+Emergency recovery tool to manually sweep funds from invoice and merchant wallets on the TRON network.
 
 ## Setup
 
@@ -10,13 +10,14 @@ pip install -r requirements.txt
 ```
 
 2. Ensure your `.env` file in the project root contains:
-   - `MASTER_MNEMONIC` - The mnemonic phrase for wallet derivation
+   - `TRON_MASTER_MNEMONIC` - The mnemonic phrase for TRON wallet derivation
    - `SUPABASE_URL` - Your Supabase project URL
    - `SUPABASE_SERVICE_ROLE_KEY` - Service role key for database access
-   - `NEXT_PUBLIC_USDC_CONTRACT_ADDRESS` - USDC contract address (optional)
-   - `NEXT_PUBLIC_RPC_URL` - Optimism RPC URL (optional, defaults to Sepolia)
+   - `TRON_USDT_CONTRACT` - USDT TRC20 contract address (optional, defaults to mainnet)
+   - `TRON_RPC_URL` - TronGrid API URL (optional, defaults to https://api.trongrid.io)
+   - `TRON_API_KEY` - TronGrid API key (optional)
 
-3. The script will automatically load environment variables from the `.env` file in the parent directory.
+3. The script will automatically load environment variables from the `.env` file.
 
 ## Usage
 
@@ -25,9 +26,14 @@ Run the script:
 python check_and_sweep.py
 ```
 
-The script will:
-1. Connect to Supabase and load all invoices from the database
-2. Display all invoices with their current balances
+The interactive menu provides:
+1. **Check gas wallet status** - View TRX balance of the gas wallet (derivation index 0)
+2. **List recent invoices** - Show all invoices with status and balances
+3. **List merchants & balances** - Show all merchants with USDT/TRX balances
+4. **Sweep all pending invoices** - Auto-sweep paid invoices (commission + merchant split)
+5. **Sweep merchant to external** - Move USDT from merchant derived wallet to external wallet
+6. **Prefund a wallet** - Send TRX from gas wallet to any address
+7. **Check invoice wallet** - Look up balance by derivation index
 3. Ask you to select an invoice by ID (you can use the first 8 characters)
 4. Monitor the wallet for payment (for ETH) or ask for manual verification (for USDC)
 5. Sweep the funds to the master wallet address configured in the database
