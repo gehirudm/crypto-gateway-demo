@@ -47,9 +47,6 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-# Default prefund amount in ETH (enough for ~2 ERC20 transfers on Optimism L2)
-DEFAULT_PREFUND_ETH = 0.002
-
 # Minimal ERC20 ABI for balanceOf and transfer
 ERC20_ABI = [
     {
@@ -205,13 +202,26 @@ def send_usdt(from_acct, to_address: str, amount_usdt: float) -> Optional[str]:
         return None
 
 
-def prefund_with_eth(to_address: str, amount_eth: float = DEFAULT_PREFUND_ETH) -> Optional[str]:
-    """Prefund a wallet with ETH from the gas wallet (index 0)."""
+def prefund_with_eth(to_address: str, amount_eth: float = 0.0) -> Optional[str]:
+    """Prefund a wallet with ETH from the gas wallet (index 0).
+    If amount_eth is 0 or not provided, estimates the required gas dynamically."""
     gas_address, gas_acct = derive_invoice_wallet(0)
     gas_balance = get_eth_balance(gas_address)
 
-    if gas_balance < amount_eth + 0.0005:
-        print(f"  [WARN] Gas wallet only has {gas_balance:.6f} ETH, need {amount_eth + 0.0005:.6f}")
+    if amount_eth <= 0:
+        amount_eth = estimate_sweep_cost() * 1.25  # 25% buffer
+
+    # Only need a tiny buffer for the ETH transfer gas itself (~21000 gas)
+    try:
+        gas_price = w3.eth.gas_price
+        eth_transfer_cost = float(w3.from_wei(gas_price * 21000 * 2, "ether"))
+    except Exception:
+        eth_transfer_cost = 0.00005
+
+    total_needed = amount_eth + eth_transfer_cost
+
+    if gas_balance < total_needed:
+        print(f"  [WARN] Gas wallet only has {gas_balance:.8f} ETH, need {total_needed:.8f}")
         return None
 
     return send_eth(gas_acct, to_address, amount_eth)
@@ -259,10 +269,33 @@ def update_invoice(invoice_id: str, updates: Dict):
 # ================== SWEEP LOGIC ==================
 
 
+def estimate_sweep_cost() -> float:
+    """
+    Estimate the ETH cost for a sweep transaction on Optimism.
+    Includes L2 gas cost + estimated L1 data fee buffer.
+    """
+    try:
+        # Get current gas price (L2)
+        gas_price = w3.eth.gas_price
+        # Standard ERC20 transfer gas limit (safe upper bound)
+        gas_limit = 100000 
+        l2_cost = float(w3.from_wei(gas_price * gas_limit, 'ether'))
+        
+        # L1 data fee estimation (buffer)
+        # Optimism L1 fee varies but 0.00015 ETH is a safe conservative upper bound for a simple transfer
+        l1_buffer = 0.00015
+        
+        total_estimated = l2_cost + l1_buffer
+        return total_estimated
+    except Exception as e:
+        print(f"  [WARN] Failed to estimate gas cost: {e}")
+        return 0.0003  # Fallback
+
+
 def check_and_sweep_invoice(invoice: Dict, config: Dict) -> bool:
     """
     Check a single invoice and sweep if paid.
-    Splits USDT: commission -> master wallet, remainder -> merchant wallet.
+    Sweeps ALL USDT to the master wallet.
     Returns True if swept successfully.
     """
     invoice_id = invoice["id"]
@@ -287,25 +320,21 @@ def check_and_sweep_invoice(invoice: Dict, config: Dict) -> bool:
         print(f"  Waiting... ({usdt_balance:.2f} / {amount_expected:.2f})")
         return False
 
-    # Calculate commission split
-    commission_rate = float(config.get("commission_rate", 5.0))
-    commission_amount = usdt_balance * (commission_rate / 100.0)
-    merchant_amount = usdt_balance - commission_amount
     master_wallet = config["master_wallet_address"]
-    merchant_wallet = merchant.get("derived_wallet_address", "") if merchant else ""
+    print(f"  Fully paid! Sweeping {usdt_balance:.4f} USDT -> {master_wallet[:12]}...")
 
-    print(f"  Fully paid! Sweeping...")
-    print(f"  Commission: {commission_amount:.4f} USDT ({commission_rate}%) -> {master_wallet[:12]}...")
-    print(f"  Merchant:   {merchant_amount:.4f} USDT -> {merchant_wallet[:12] if merchant_wallet else 'N/A'}...")
-
-    if not merchant_wallet:
-        print(f"  [ERROR] No merchant wallet address found!")
-        return False
-
-    # Step 1: Prefund with ETH for gas if needed
-    if eth_balance < 0.0005:
-        print(f"  Prefunding with ETH for gas...")
-        prefund_tx = prefund_with_eth(wallet_address)
+    # Step 1: Calculate gas and prefund if needed
+    estimated_gas_cost = estimate_sweep_cost()
+    required_eth = estimated_gas_cost * 1.5  # 1.5x Safety margin
+    
+    if eth_balance < required_eth:
+        needed = required_eth - eth_balance
+        # Ensure we prefund at least a sensible minimum to avoid tiny dust transfers
+        prefund_amount = max(needed, 0.0002)
+        
+        print(f"  Prefunding {prefund_amount:.6f} ETH for gas (est cost: {estimated_gas_cost:.6f})...")
+        
+        prefund_tx = prefund_with_eth(wallet_address, prefund_amount)
         if not prefund_tx:
             print(f"  [ERROR] Prefunding failed!")
             update_invoice(invoice_id, {"status": "prefunding"})
@@ -316,7 +345,7 @@ def check_and_sweep_invoice(invoice: Dict, config: Dict) -> bool:
             {
                 "status": "prefunding",
                 "gas_prefund_tx_hash": prefund_tx,
-                "gas_prefund_amount": str(DEFAULT_PREFUND_ETH),
+                "gas_prefund_amount": str(prefund_amount),
             },
         )
 
@@ -326,36 +355,24 @@ def check_and_sweep_invoice(invoice: Dict, config: Dict) -> bool:
     # Derive the invoice wallet's private key
     _, invoice_acct = derive_invoice_wallet(derivation_index)
 
-    # Step 2: Send commission to master wallet
+    # Step 2: Sweep to master wallet
     update_invoice(invoice_id, {"status": "sweeping"})
 
-    commission_tx = None
-    if commission_amount > 0.01:
-        commission_tx = send_usdt(invoice_acct, master_wallet, commission_amount)
-        if commission_tx:
-            update_invoice(invoice_id, {"commission_tx_hash": commission_tx})
-            print(f"  Waiting between transfers...")
-            time.sleep(5)
-        else:
-            print(f"  [ERROR] Commission transfer failed!")
-            return False
-
-    # Step 3: Send remainder to merchant derived wallet
-    merchant_tx = send_usdt(invoice_acct, merchant_wallet, merchant_amount)
-    if merchant_tx:
+    sweep_tx = send_usdt(invoice_acct, master_wallet, usdt_balance)
+    if sweep_tx:
         update_invoice(
             invoice_id,
             {
                 "status": "completed",
-                "merchant_tx_hash": merchant_tx,
-                "commission_amount": str(commission_amount),
-                "merchant_amount": str(merchant_amount),
+                "merchant_tx_hash": sweep_tx, # Storing main tx hash here
+                "commission_amount": "0",
+                "merchant_amount": str(usdt_balance),
             },
         )
         print(f"  ✅ Sweep complete!")
         return True
     else:
-        print(f"  [ERROR] Merchant transfer failed!")
+        print(f"  [ERROR] Sweep transfer failed!")
         return False
 
 
@@ -400,7 +417,7 @@ def sweep_merchant_to_external(merchant_id: str):
     # Prefund with ETH if gas is too low
     if eth_balance < 0.0003:
         print(f"  Prefunding with ETH for gas...")
-        prefund_with_eth(derived_address, DEFAULT_PREFUND_ETH / 2)
+        prefund_with_eth(derived_address)
         time.sleep(5)
 
     _, merchant_acct = derive_merchant_wallet(derivation_index)
@@ -547,8 +564,8 @@ def main():
 
         elif choice == "6":
             address = input("Enter address to prefund: ").strip()
-            amount = input(f"Enter ETH amount (default {DEFAULT_PREFUND_ETH}): ").strip()
-            amount_eth = float(amount) if amount else DEFAULT_PREFUND_ETH
+            amount = input("Enter ETH amount (0 = auto-estimate): ").strip()
+            amount_eth = float(amount) if amount else 0.0
             prefund_with_eth(address, amount_eth)
 
         elif choice == "7":

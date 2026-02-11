@@ -105,21 +105,24 @@ export async function checkAndSweepInvoice(invoiceId: string): Promise<{
   try {
     const supabase = await createClient()
 
-    // Atomic lock: only proceed if we can claim this invoice
-    // This prevents concurrent sweeps on the same invoice
+    // Atomic lock: only proceed if we can claim this invoice from a non-sweeping state.
+    // If already 'sweeping', another process is handling it — skip.
     const { data: claimed, error: claimError } = await supabase
       .from('invoices')
       .update({ status: 'sweeping', last_checked_at: new Date().toISOString() })
       .eq('id', invoiceId)
-      .in('status', ['received', 'prefunding', 'sweeping'])
+      .in('status', ['received', 'prefunding'])
       .select()
       .single()
 
     if (claimError || !claimed) {
-      console.log(`[SWEEP] Invoice ${invoiceId} already completed or locked, skipping`)
-      // Check if it was already completed successfully
+      // Check if it's already completed or being swept by another process
       const invoice = await getInvoice(invoiceId)
-      return { swept: invoice?.status === 'completed' }
+      if (invoice?.status === 'completed') {
+        return { swept: true }
+      }
+      console.log(`[SWEEP] Invoice ${invoiceId} is ${invoice?.status}, skipping duplicate sweep`)
+      return { swept: false }
     }
 
     const invoice = claimed as Invoice
